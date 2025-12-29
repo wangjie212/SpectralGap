@@ -6,7 +6,7 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     sort!(ptsupp, lt=isless_td)
     tbasis,wbasis,sbasis = get_tbasis(N, d, ptsupp)
     lb = length(tbasis)
-    gbasis = get_wbasis(N, N-1)
+    gbasis = get_wbasis(N, d-1, sites=Vector(2:N-1))
     lgb = length(gbasis)
     if QUIET == false
         println("The block sizes are [$lb, $lgb].")
@@ -20,20 +20,19 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     end
     sort!(tsupp)
     unique!(tsupp)
-    ltsupp = length(tsupp)
     if QUIET == false
-        println("There are $ltsupp affine constraints.")
+        println("There are $(length(tsupp)) affine constraints.")
         println("Assembling the SDP...")
     end
     model = Model(optimizer_with_attributes(Mosek.Optimizer))
     set_optimizer_attribute(model, MOI.Silent(), QUIET)
-    cons = [AffExpr(0) for i=1:ltsupp]
+    cons = [AffExpr(0) for i=1:length(tsupp)]
     @inbounds pos = @variable(model, [1:2*lb, 1:2*lb], PSD)
     for i = 1:lb, j = i:lb
         @inbounds bi1,c = reduce!([wbasis[tbasis[i][1]]; wbasis[tbasis[j][1]]])
         @inbounds bi2 = sort([sbasis[tbasis[i][2]]; sbasis[tbasis[j][2]]])
         bi = state_reduce(bi1, bi2, ptsupp)
-        Locb = bfind(tsupp, ltsupp, bi)
+        Locb = bfind(tsupp, bi)
         pp1 = pos[i, j] + pos[i+lb, j+lb]
         pp2 = pos[i+lb, j] - pos[j+lb, i]
         if i == j
@@ -54,8 +53,8 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
             if isempty(bi)
                 Locb = 1
             else
-                loc = bfind(ptsupp, length(ptsupp), bi, lt=isless_td)
-                Locb = bfind(tsupp, ltsupp, [loc])
+                loc = bfind(ptsupp, bi, lt=isless_td)
+                Locb = bfind(tsupp, [loc])
             end
             if i == j
                 @inbounds add_to_expression!(cons[Locb], real(c), pp1)
@@ -69,8 +68,8 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
             if isempty(bi)
                 Locb = 1
             else
-                loc = bfind(ptsupp, length(ptsupp), bi, lt=isless_td)
-                Locb = bfind(tsupp, ltsupp, [loc])
+                loc = bfind(ptsupp, bi, lt=isless_td)
+                Locb = bfind(tsupp, [loc])
             end
             if i == j
                 @inbounds add_to_expression!(cons[Locb], -real(c), pp1)
@@ -85,8 +84,8 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
         if isempty(bi)
             Locb = 1
         else
-            loc = bfind(ptsupp, length(ptsupp), bi, lt=isless_td)
-            Locb = bfind(tsupp, ltsupp, [loc])
+            loc = bfind(ptsupp, bi, lt=isless_td)
+            Locb = bfind(tsupp, [loc])
         end
         if i == j
             @inbounds add_to_expression!(cons[Locb], -gamma*real(c), pp1)
@@ -99,14 +98,14 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
         if isempty(gbasis[i])
             loc1 = Int[]
         else
-            loc1 = bfind(ptsupp, length(ptsupp), gbasis[i], lt=isless_td)
+            loc1 = bfind(ptsupp, gbasis[i], lt=isless_td)
         end
         if isempty(gbasis[j])
             loc2 = Int[]
         else
-            loc2 = bfind(ptsupp, length(ptsupp), gbasis[j], lt=isless_td)
+            loc2 = bfind(ptsupp, gbasis[j], lt=isless_td)
         end
-        Locb = bfind(tsupp, ltsupp, sort([loc1; loc2]))
+        Locb = bfind(tsupp, sort([loc1; loc2]))
         if i == j
             @inbounds add_to_expression!(cons[Locb], gamma, pp1)
         else

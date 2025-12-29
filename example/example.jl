@@ -2,35 +2,17 @@ using SpectralGap
 
 # 1D Ising model with transversal field
 N = 3 # number of sites
-H = ncpoly([[[i;i+1] for i = 1:N-1]; [[1;N]]], -ones(N)) # define the Hamiltonian
-gamma = 0.5
+H = ncpoly([3*[i;i+1] for i = 1:N-1], -ones(N-1)) # define the Hamiltonian
+gamma = 3.5
 d = 2
 @time status = certify_gap(N, H, gamma, d, QUIET=false)
 
-N = 2
-H = ncpoly([[3;6]], [-1])
-gamma = 0.5
+N = 5
+H = ncpoly([[3*[i;i+1] for i = 1:N-1]; [[3*i-2] for i = 1:N]], [-ones(N-1); 1.5*ones(N)])
+gamma = 3.5
 d = 2
 @time status = certify_gap(N, H, gamma, d, QUIET=false)
 
-
-N = 2
-H = ncpoly([[3;6], [1], [4]], [-1, 2, 2])
-gamma = 1.3
-d = 2
-@time status = certify_gap(N, H, gamma, d, QUIET=false)
-
-N = 3
-H = ncpoly([[3;6], [6;9], [3;9], [1], [4], [7]], [-1, -1, -1, 2, 2, 2])
-gamma = 1.5
-d = 2
-@time status = certify_gap(N, H, gamma, d, QUIET=false)
-
-N = 4
-H = ncpoly([[3;6], [6;9], [9;12], [3;12], [1], [4], [7], [10]], [-1, -1, -1, -1, 2, 2, 2, 2])
-gamma = 0.5
-d = 2
-@time status = certify_gap(N, H, gamma, d, QUIET=false)
 
 using LinearAlgebra
 
@@ -42,9 +24,9 @@ for i = 1:N-1
     ind[i] = ind[i+1] = 4
     B -= real(kron(Pauli[ind]...))
 end
-ind = ones(Int, N)
-ind[1] = ind[N] = 4
-B -= real(kron(Pauli[ind]...))
+# ind = ones(Int, N)
+# ind[1] = ind[N] = 4
+# B -= real(kron(Pauli[ind]...))
 for i = 1:N
     ind = ones(Int, N)
     ind[i] = 2
