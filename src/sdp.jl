@@ -1,25 +1,27 @@
 function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     println("********************************** SpectralGap **********************************")
     println("SpectralGap is launching...")
-    ptsupp = get_wbasis(N, min(N, 2d))
-    ptsupp = ptsupp[2:end]
-    sort!(ptsupp, lt=isless_td)
-    tbasis,wbasis,sbasis = get_tbasis(N, d, ptsupp)
-    lb = length(tbasis)
+    basis = [get_basis(N, d, label=i) for i = 1:2]
+    lb = length.(basis)
     gbasis = get_wbasis(N, d-1, sites=Vector(2:N-1))
     lgb = length(gbasis)
     if QUIET == false
-        println("The block sizes are [$lb, $lgb].")
+        println("The block sizes are $lb.")
     end
-    tsupp = Vector{Int}[]
-    for i = 1:length(tbasis), j = i:length(tbasis)
-        @inbounds bi1 = reduce!([wbasis[tbasis[i][1]]; wbasis[tbasis[j][1]]])[1]
-        @inbounds bi2 = sort([sbasis[tbasis[i][2]]; sbasis[tbasis[j][2]]])
-        bi = state_reduce(bi1, bi2, ptsupp)
-        push!(tsupp, bi)
+    tsupp = [[Int[]]]
+    for i = 1:2, j = 1:lb[i], k = j:lb[i]
+        @inbounds bi,c = reduce!([basis[i][j][1]; basis[i][k][1]])
+        if c != 0
+            if isempty(bi)
+                push!(tsupp, sort([basis[i][j][2]; basis[i][k][2]]))
+            else
+                push!(tsupp, sort([basis[i][j][2]; basis[i][k][2]; [bi]]))
+            end
+        end
     end
     sort!(tsupp)
     unique!(tsupp)
+    tsupp = tsupp[2:end]
     if QUIET == false
         println("There are $(length(tsupp)) affine constraints.")
         println("Assembling the SDP...")
@@ -27,94 +29,97 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     model = Model(optimizer_with_attributes(Mosek.Optimizer))
     set_optimizer_attribute(model, MOI.Silent(), QUIET)
     cons = [AffExpr(0) for i=1:length(tsupp)]
-    @inbounds pos = @variable(model, [1:2*lb, 1:2*lb], PSD)
-    for i = 1:lb, j = i:lb
-        @inbounds bi1,c = reduce!([wbasis[tbasis[i][1]]; wbasis[tbasis[j][1]]])
-        @inbounds bi2 = sort([sbasis[tbasis[i][2]]; sbasis[tbasis[j][2]]])
-        bi = state_reduce(bi1, bi2, ptsupp)
-        Locb = bfind(tsupp, bi)
-        pp1 = pos[i, j] + pos[i+lb, j+lb]
-        pp2 = pos[i+lb, j] - pos[j+lb, i]
-        if i == j
-            @inbounds add_to_expression!(cons[Locb], real(c), pp1)
-        else
-            @inbounds add_to_expression!(cons[Locb], 2*real(c), pp1)
-            if imag(c) != 0
-                @inbounds add_to_expression!(cons[Locb], -2*imag(c), pp2)
+    pos = Vector{Symmetric{VariableRef}}(undef, 2)
+    for i = 1:2
+        pos[i] = @variable(model, [1:lb[i], 1:lb[i]], PSD)
+        # pos[i] = @variable(model, [1:2*lb[i], 1:2*lb[i]], PSD)
+        for j = 1:lb[i], k = j:lb[i]
+            @inbounds bi,c = reduce!([basis[i][j][1]; basis[i][k][1]], realify=true)
+            # @inbounds bi,c = reduce!([basis[i][j][1]; basis[i][k][1]])
+            if c != 0
+                if isempty(bi)
+                    if isempty(basis[i][j][2]) && isempty(basis[i][k][2])
+                        Locb = 1
+                    else
+                        Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]]))
+                    end
+                else
+                    Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]; [bi]]))
+                end
+                # pp1 = pos[i][j, k] + pos[i][j+lb[i], k+lb[i]]
+                # pp2 = pos[i][j+lb[i], k] - pos[i][k+lb[i], j]
+                # if j == k
+                #     @inbounds add_to_expression!(cons[Locb], real(c), pp1)
+                # else
+                #     if imag(c) == 0
+                #         @inbounds add_to_expression!(cons[Locb], 2*real(c), pp1)
+                #     else
+                #         @inbounds add_to_expression!(cons[Locb], -2*imag(c), pp2)
+                #     end
+                # end
+                if j == k
+                    @inbounds add_to_expression!(cons[Locb], c, pos[i][j,k])
+                else
+                    @inbounds add_to_expression!(cons[Locb], 2c, pos[i][j,k])
+                end
             end
         end
     end
-    @inbounds gpos = @variable(model, [1:2*lgb, 1:2*lgb], PSD)
+    gpos = @variable(model, [1:2*lgb, 1:2*lgb], PSD)
     for i = 1:lgb, j = i:lgb
         pp1 = gpos[i, j] + gpos[i+lgb, j+lgb]
         pp2 = gpos[i+lgb, j] - gpos[j+lgb, i]
         for k = 1:length(H.supp)
             @inbounds bi,c = reduce!([gbasis[i]; H.supp[k]; gbasis[j]])
-            if isempty(bi)
-                Locb = 1
-            else
-                loc = bfind(ptsupp, bi, lt=isless_td)
-                Locb = bfind(tsupp, [loc])
-            end
-            if i == j
-                @inbounds add_to_expression!(cons[Locb], real(c), pp1)
-            else
-                @inbounds add_to_expression!(cons[Locb], 2*real(c), pp1)
-                if imag(c) != 0
-                    @inbounds add_to_expression!(cons[Locb], -2*imag(c), pp2)
+            if c != 0
+                Locb = bfind(tsupp, [bi])
+                if i == j
+                    @inbounds add_to_expression!(cons[Locb], real(c)*H.coe[k], pp1)
+                else
+                    @inbounds add_to_expression!(cons[Locb], 2*real(c)*H.coe[k], pp1)
+                    if imag(c) != 0
+                        @inbounds add_to_expression!(cons[Locb], -2*imag(c)*H.coe[k], pp2)
+                    end
                 end
             end
             @inbounds bi,c = reduce!([gbasis[i]; gbasis[j]; H.supp[k]])
-            if isempty(bi)
-                Locb = 1
-            else
-                loc = bfind(ptsupp, bi, lt=isless_td)
-                Locb = bfind(tsupp, [loc])
-            end
-            if i == j
-                @inbounds add_to_expression!(cons[Locb], -real(c), pp1)
-            else
-                @inbounds add_to_expression!(cons[Locb], -2*real(c), pp1)
-                if imag(c) != 0
-                    @inbounds add_to_expression!(cons[Locb], 2*imag(c), pp2)
+            if c != 0
+                Locb = bfind(tsupp, [bi])
+                if i == j
+                    @inbounds add_to_expression!(cons[Locb], -real(c)*H.coe[k], pp1)
+                else
+                    @inbounds add_to_expression!(cons[Locb], -2*real(c)*H.coe[k], pp1)
+                    if imag(c) != 0
+                        @inbounds add_to_expression!(cons[Locb], 2*imag(c)*H.coe[k], pp2)
+                   end
                 end
             end
         end
         @inbounds bi,c = reduce!([gbasis[i]; gbasis[j]])
-        if isempty(bi)
-            Locb = 1
-        else
-            loc = bfind(ptsupp, bi, lt=isless_td)
-            Locb = bfind(tsupp, [loc])
-        end
-        if i == j
-            @inbounds add_to_expression!(cons[Locb], -gamma*real(c), pp1)
-        else
-            @inbounds add_to_expression!(cons[Locb], -2*gamma*real(c), pp1)
-            if imag(c) != 0
-                @inbounds add_to_expression!(cons[Locb], 2*gamma*imag(c), pp2)
+        if c != 0
+            Locb = bfind(tsupp, [bi])
+            if i == j
+                @inbounds add_to_expression!(cons[Locb], -gamma*real(c), pp1)
+            else
+                @inbounds add_to_expression!(cons[Locb], -2*gamma*real(c), pp1)
+                if imag(c) != 0
+                    @inbounds add_to_expression!(cons[Locb], 2*gamma*imag(c), pp2)
+                end
             end
         end
-        if isempty(gbasis[i])
-            loc1 = Int[]
-        else
-            loc1 = bfind(ptsupp, gbasis[i], lt=isless_td)
-        end
-        if isempty(gbasis[j])
-            loc2 = Int[]
-        else
-            loc2 = bfind(ptsupp, gbasis[j], lt=isless_td)
-        end
-        Locb = bfind(tsupp, sort([loc1; loc2]))
-        if i == j
-            @inbounds add_to_expression!(cons[Locb], gamma, pp1)
-        else
-            @inbounds add_to_expression!(cons[Locb], 2*gamma, pp1)
+        if !isz(gbasis[i]) && !isz(gbasis[j])
+            Locb = bfind(tsupp, sort([gbasis[i], gbasis[j]]))
+            if i == j
+                @inbounds add_to_expression!(cons[Locb], gamma, pp1)
+            else
+                @inbounds add_to_expression!(cons[Locb], 2*gamma, pp1)
+            end
         end
     end
     @variable(model, lower)
     cons[1] += lower
-    @constraint(model, cons .== 0)
+    # @constraint(model, cons .== 0)
+    @constraint(model, con, cons==zeros(length(cons)))
     @objective(model, Max, lower)
     if QUIET == false
         println("Solving the SDP...")
@@ -127,5 +132,23 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     end
     status = termination_status(model)
     @show status
-    return status
+    dual_var = -dual(con)
+    i = 1
+    mmat = zeros(ComplexF16, lb[i], lb[i])
+    for j = 1:lb[i], k = 1:lb[i]
+        @inbounds bi,c = reduce!([basis[i][j][1]; basis[i][k][1]])
+        if c != 0
+            if isempty(bi)
+                if isempty(basis[i][j][2]) && isempty(basis[i][k][2])
+                    Locb = 1
+                else
+                    Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]]))
+                end
+            else
+                Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]; [bi]]))
+            end
+            mmat[j,k] = c*dual_var[Locb]
+        end
+    end
+    return status,mmat
 end
