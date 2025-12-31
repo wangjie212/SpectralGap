@@ -3,20 +3,6 @@ mutable struct ncpoly
     coe::Vector{Float64}
 end
 
-function get_wbasis(N, d)
-    basis = Vector{Int}[]
-    for i = 2:N-1
-        push!(basis, [3*i-2], [3*i-1], [3*i])
-    end
-    if d > 1
-        for i = 2:N-2
-            push!(basis, [3*i-2;3*i+1], [3*i-2;3*i+2], [3*i-2;3*i+3], [3*i-1;3*i+1], [3*i-1;3*i+2], 
-            [3*i-1;3*i+3], [3*i;3*i+1], [3*i;3*i+2], [3*i;3*i+3])
-        end
-    end
-    return basis
-end
-
 # reduction to the normal form
 function reduce1!(a::Vector{Int})
     la = length(a)
@@ -62,8 +48,8 @@ function reduce2!(a::Vector{Int}; realify=false)
             flag = 0
         end
     end
-    if realify == true && !isreal(coef)
-        coef = imag(coef)
+    if realify == true
+        coef = isreal(coef) ? real(coef) : imag(coef)
     end
     return a,coef
 end
@@ -88,9 +74,9 @@ function isz(a::Vector{Int})
 end
 
 # reduction w.r.t mirror symmetry
-function reduce4(a::Vector{Int})
+function reduce4(a::Vector{Int}, N)
     ra = reverse(a)
-    ma = 3*(ceil(Int, a[end]/3) .- ceil.(Int, ra/3)) + smod.(ra, 3)
+    ma = 3*(N .- ceil.(Int, ra/3)) + smod.(ra, 3)
     return min(a, ma)
 end
 
@@ -100,7 +86,7 @@ function smod(i, s)
 end
 
 # implement all reductions
-function reduce!(a::Vector{Int}; realify=false)
+function reduce!(a::Vector{Int}, N; realify=false)
     reduce1!(a)
     reduce3!(a)
     a,coef = reduce2!(a, realify=realify)
@@ -109,7 +95,7 @@ function reduce!(a::Vector{Int}; realify=false)
         if isz(a)
            coef = 0
         else
-           a = reduce4(a)
+           a = reduce4(a, N)
         end
     end
     return a,coef
@@ -132,14 +118,42 @@ function bfind(A, a)
     return nothing
 end
 
+function get_wbasis(N, d; label=1)
+    if label == 1
+        basis = [[3*i-2] for i = 2:N-1]
+        if d > 1
+            append!(basis, [[3*i-2;3*i+1] for i = 2:N-2])
+            append!(basis, [[3*i-1;3*i+2] for i = 2:N-2])
+            append!(basis, [[3*i;3*i+3] for i = 2:N-2])
+        end
+    else
+        # basis = [[[3*i-1] for i = 2:N-1]; [[3*i] for i = 2:N-1]]
+        basis = [[3*i-1] for i = 2:N-1]
+        if d > 1
+            append!(basis, [[3*i-2;3*i+2] for i = 2:N-2])
+            append!(basis, [[3*i-1;3*i+1] for i = 2:N-2])
+        end
+        append!(basis, [[3*i] for i = 2:N-1])
+        if d > 1
+            append!(basis, [[3*i-2;3*i+3] for i = 2:N-2])
+            append!(basis, [[3*i;3*i+1] for i = 2:N-2])
+        end
+    end
+    return basis
+end
+
+function get_sbasis(N)
+    basis = [[Vector{Int}[]]; [[[3*i-2]] for i = 1:ceil(Int, N/2)]]
+    return basis
+end
+
 function get_basis(N, d; label=1)
     if label == 1
         basis = [tuple(Int[], Vector{Int}[])]
-        for i = 1:N
-            push!(basis, tuple([3*i-2], Vector{Int}[]))
-        end
+        append!(basis, [tuple([3*i-2], Vector{Int}[]) for i = 1:N])
+        append!(basis, [tuple(Int[], [[3*i-2]]) for i = 1:ceil(Int, N/2)])
+        append!(basis, [tuple([3*i-2;3*i+1], Vector{Int}[]) for i = 1:N-1])
         for i = 1:N-1
-            append!(basis, [tuple([3*i-2;3*j+1], Vector{Int}[]) for j = i:N-1])
             append!(basis, [tuple([3*i-1;3*j+2], Vector{Int}[]) for j = i:N-1])
             append!(basis, [tuple([3*i;3*j+3], Vector{Int}[]) for j = i:N-1])
             # append!(basis, [tuple([3*i-2], [[3*j+1]]) for j = i:N-1])
@@ -157,39 +171,48 @@ function get_basis(N, d; label=1)
         #     push!(basis, tuple([3*i-1;3*i+3], Vector{Int}[]), tuple([3*i;3*i+2], Vector{Int}[]))
         # end
         if d > 2
+            append!(basis, [tuple(Int[], [[3*i-2;3*i+1]]) for i = 1:floor(Int, N/2)])
+            append!(basis, [tuple(Int[], [[3*i;3*i+3]]) for i = 1:floor(Int, N/2)])
+            for i = 1:floor(Int, N/2)
+                append!(basis, [tuple(Int[], [[3*i-1;3*j+2]]) for j = i:N-1])
+            end
+            for i = 1:ceil(Int, N/2)
+                append!(basis, [tuple(Int[], [[3*i-2], [3*j-2]]) for j = i:ceil(Int, N/2)])
+            end
+            for i = 1:N-1
+                append!(basis, [tuple([3*i-2;3*j+1], Vector{Int}[]) for j = i:N-1])
+            end
             for i = 1:N-2
                push!(basis, tuple([3*i-2;3*i+1;3*i+4], Vector{Int}[]), tuple([3*i-2;3*i+2;3*i+5], Vector{Int}[]), tuple([3*i-1;3*i+1;3*i+5], Vector{Int}[]),
                tuple([3*i-1;3*i+2;3*i+4], Vector{Int}[]), tuple([3*i-2;3*i+3;3*i+6], Vector{Int}[]), tuple([3*i;3*i+1;3*i+6], Vector{Int}[]), tuple([3*i;3*i+3;3*i+4], Vector{Int}[]))
             end
-        end
-    elseif label == 2
-        basis = Tuple{Vector{Int}, Vector{Vector{Int}}}[]
-        for i = 1:N
-            push!(basis, tuple(Int[], [[3*i-2]]))
-        end
-        if d > 2
+    #     end
+    # elseif label == 2
+    #     basis = [tuple(Int[], [[3*i-2]]) for i = 1:ceil(Int, N/2)]
+    #     if d > 2
+            for i = 1:floor(Int, N/2)
+                append!(basis, [tuple(Int[], [[3*i;3*j]]) for j = i+1:N])
+            end
+            for i = 1:N-2, j = i+1:N-1, k = j+1:N
+                push!(basis, tuple([3*i-2;3*j;3*k], Vector{Int}[]), tuple([3*i;3*j-2;3*k], Vector{Int}[]), tuple([3*i;3*j;3*k-2], Vector{Int}[]))
+            end
             for i = 1:N-1
                 push!(basis, tuple(Int[], [[3*i-2;3*i+1]]), tuple(Int[], [[3*i-1;3*i+2]]), tuple(Int[], [[3*i;3*i+3]]))
             end
-            for i = 1:N-2
-               push!(basis, tuple(Int[3*i+1;3*i+4], [[3*i-2]]), tuple(Int[3*i+2;3*i+5], [[3*i-2]]), tuple(Int[3*i+3;3*i+6], [[3*i-2]]),
-               tuple(Int[3*i-2;3*i+1], [[3*i+4]]), tuple(Int[3*i-1;3*i+2], [[3*i+4]]), tuple(Int[3*i;3*i+3], [[3*i+4]]))
-            end
+            # for i = 1:N-2
+            #    push!(basis, tuple(Int[3*i+1;3*i+4], [[3*i-2]]), tuple(Int[3*i+2;3*i+5], [[3*i-2]]), tuple(Int[3*i+3;3*i+6], [[3*i-2]]),
+            #    tuple(Int[3*i-2;3*i+1], [[3*i+4]]), tuple(Int[3*i-1;3*i+2], [[3*i+4]]), tuple(Int[3*i;3*i+3], [[3*i+4]]))
+            # end
         end
     else
-        basis = Tuple{Vector{Int}, Vector{Vector{Int}}}[]
-        # for i = 1:N
-        #     push!(basis, tuple([3*i-1], Vector{Int}[]))
-        # end
-        # for i = 1:N-1
-        #     push!(basis, tuple([3*i-2;3*i+2], Vector{Int}[]), tuple([3*i-1], [[3*i+1]]), tuple([3*i-2], [[3*i+2]]), tuple([3*i-1;3*i+1], Vector{Int}[]))
-        # end
-        for i = 1:N
-            push!(basis, tuple([3*i], Vector{Int}[]))
-        end
+        basis = [tuple([3*i-1], Vector{Int}[]) for i = 1:N]
         for i = 1:N-1
-            push!(basis, tuple([3*i-2;3*i+3], Vector{Int}[]), tuple([3*i;3*i+1], Vector{Int}[]))
+            push!(basis, tuple([3*i-2;3*i+2], Vector{Int}[]), tuple([3*i-1], [[3*i+1]]), tuple([3*i-2], [[3*i+2]]), tuple([3*i-1;3*i+1], Vector{Int}[]))
         end
+        # basis = [tuple([3*i], Vector{Int}[]) for i = 1:N]
+        append!(basis, [tuple([3*i], Vector{Int}[]) for i = 1:N])
+        append!(basis, [tuple([3*i-2;3*i+3], Vector{Int}[]) for i = 1:N-1])
+        append!(basis, [tuple([3*i;3*i+1], Vector{Int}[]) for i = 1:N-1])
         if d > 2
             for i = 1:N-2
                push!(basis, tuple([3*i;3*i+3;3*i+6], Vector{Int}[]), tuple([3*i;3*i+1;3*i+4], Vector{Int}[]), tuple([3*i-2;3*i+3;3*i+4], Vector{Int}[]),
