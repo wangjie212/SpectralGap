@@ -3,10 +3,16 @@ mutable struct ncpoly
     coe::Vector{Float64}
 end
 
-function get_wbasis(N, d; sites=Vector(1:N))
+function get_wbasis(N, d)
     basis = Vector{Int}[]
-    for i in sites
-        push!(basis, [3*(i-1)+1], [3*(i-1)+2], [3*i])
+    for i = 2:N-1
+        push!(basis, [3*i-2], [3*i-1], [3*i])
+    end
+    if d > 1
+        for i = 2:N-2
+            push!(basis, [3*i-2;3*i+1], [3*i-2;3*i+2], [3*i-2;3*i+3], [3*i-1;3*i+1], [3*i-1;3*i+2], 
+            [3*i-1;3*i+3], [3*i;3*i+1], [3*i;3*i+2], [3*i;3*i+3])
+        end
     end
     return basis
 end
@@ -130,7 +136,7 @@ function get_basis(N, d; label=1)
     if label == 1
         basis = [tuple(Int[], Vector{Int}[])]
         for i = 1:N
-            push!(basis, tuple([3*i-2], Vector{Int}[]), tuple(Int[], [[3*i-2]]), tuple(Int[], [[3*i-2], [3*i-2]]))
+            push!(basis, tuple([3*i-2], Vector{Int}[]))
         end
         for i = 1:N-1
             append!(basis, [tuple([3*i-2;3*j+1], Vector{Int}[]) for j = i:N-1])
@@ -144,43 +150,51 @@ function get_basis(N, d; label=1)
             # append!(basis, [tuple(Int[], [[3*i-2], [3*j+1]]) for j = i:N-1])
             # append!(basis, [tuple([3*i-1;3*j+3], Vector{Int}[]) for j = i:N-1])
             # append!(basis, [tuple([3*i;3*j+2], Vector{Int}[]) for j = i:N-1])
-            push!(basis, tuple([3*i-2], [[3*i+1]]), tuple([3*i+1], [[3*i-2]]), tuple(Int[], [[3*i-2;3*i+1]]), tuple(Int[], [[3*i-1;3*i+2]]), tuple(Int[], [[3*i;3*i+3]]),
-            tuple(Int[], [[3*i-2], [3*i+1]]))
+            # push!(basis, tuple(Int[], [[3*i-1;3*i+2]]), tuple(Int[], [[3*i;3*i+3]]), tuple([3*i+1], [[3*i-2]]), 
+            # tuple([3*i-2], [[3*i+1]]), tuple(Int[], [[3*i-2;3*i+1]]), tuple(Int[], [[3*i-2], [3*i+1]]))
         end
-        for i = 1:N-1
-            push!(basis, tuple([3*i-1;3*i+3], Vector{Int}[]), tuple([3*i;3*i+2], Vector{Int}[]))
-        end
+        # for i = 1:N-1
+        #     push!(basis, tuple([3*i-1;3*i+3], Vector{Int}[]), tuple([3*i;3*i+2], Vector{Int}[]))
+        # end
         if d > 2
             for i = 1:N-2
-               push!(basis, tuple([3*i-2;3*i+1;3*i+4], Vector{Int}[]), tuple([3*i-2;3*i+2;3*i+5], Vector{Int}[]), tuple([3*i-1;3*i+1;3*i+5], Vector{Int}[]), 
-               tuple([3*i-1;3*i+2;3*i+4], Vector{Int}[]), tuple([3*i-2;3*i+3;3*i+6], Vector{Int}[]), tuple([3*i;3*i+1;3*i+6], Vector{Int}[]), tuple([3*i;3*i+3;3*i+4], Vector{Int}[]),
-               tuple([3*i-2;3*i+2;3*i+6], Vector{Int}[]), tuple([3*i-2;3*i+3;3*i+5], Vector{Int}[]), tuple([3*i-1;3*i+1;3*i+6], Vector{Int}[]), tuple([3*i;3*i+1;3*i+5], Vector{Int}[]),
-               tuple([3*i-1;3*i+3;3*i+4], Vector{Int}[]), tuple([3*i;3*i+2;3*i+4], Vector{Int}[]), tuple([3*i+1;3*i+4], [[3*i-2]]), tuple([3*i-2;3*i+4], [[3*i+1]]), 
-               tuple([3*i-2;3*i+1], [[3*i+4]]), tuple([3*i+2;3*i+6], [[3*i-2]]), tuple([3*i+3;3*i+5], [[3*i-2]]), tuple([3*i-1;3*i+6], [[3*i+1]]), 
-               tuple([3*i;3*i+5], [[3*i+1]]), tuple([3*i-1;3*i+3], [[3*i+4]]), tuple([3*i;3*i+2], [[3*i+4]]))
+               push!(basis, tuple([3*i-2;3*i+1;3*i+4], Vector{Int}[]), tuple([3*i-2;3*i+2;3*i+5], Vector{Int}[]), tuple([3*i-1;3*i+1;3*i+5], Vector{Int}[]),
+               tuple([3*i-1;3*i+2;3*i+4], Vector{Int}[]), tuple([3*i-2;3*i+3;3*i+6], Vector{Int}[]), tuple([3*i;3*i+1;3*i+6], Vector{Int}[]), tuple([3*i;3*i+3;3*i+4], Vector{Int}[]))
+            end
+        end
+    elseif label == 2
+        basis = Tuple{Vector{Int}, Vector{Vector{Int}}}[]
+        for i = 1:N
+            push!(basis, tuple(Int[], [[3*i-2]]))
+        end
+        if d > 2
+            for i = 1:N-1
+                push!(basis, tuple(Int[], [[3*i-2;3*i+1]]), tuple(Int[], [[3*i-1;3*i+2]]), tuple(Int[], [[3*i;3*i+3]]))
+            end
+            for i = 1:N-2
+               push!(basis, tuple(Int[3*i+1;3*i+4], [[3*i-2]]), tuple(Int[3*i+2;3*i+5], [[3*i-2]]), tuple(Int[3*i+3;3*i+6], [[3*i-2]]),
+               tuple(Int[3*i-2;3*i+1], [[3*i+4]]), tuple(Int[3*i-1;3*i+2], [[3*i+4]]), tuple(Int[3*i;3*i+3], [[3*i+4]]))
             end
         end
     else
         basis = Tuple{Vector{Int}, Vector{Vector{Int}}}[]
-        for i = 1:N
-            push!(basis, tuple([3*i-1], Vector{Int}[]))
-        end
-        for i = 1:N-1
-            # append!(basis, [tuple([3*i-2;3*j+2], Vector{Int}[]) for j = i:N-1])
-            # append!(basis, [tuple([3*i-1;3*j+1], Vector{Int}[]) for j = i:N-1])
-            # append!(basis, [tuple([3*i-2], [[3*j+2]]) for j = i:N-1])
-            # append!(basis, [tuple([3*i-1], [[3*j+1]]) for j = i:N-1])
-            # append!(basis, [tuple([3*i-2;3*j+3], Vector{Int}[]) for j = i:N-1])
-            # append!(basis, [tuple([3*i;3*j+1], Vector{Int}[]) for j = i:N-1])
-            # append!(basis, [tuple([3*i-2], [[3*j+3]]) for j = i:N-1])
-            # append!(basis, [tuple([3*i], [[3*j+1]]) for j = i:N-1])
-            push!(basis, tuple([3*i-2;3*i+2], Vector{Int}[]), tuple([3*i-1;3*i+1], Vector{Int}[]), tuple([3*i-2], [[3*i+2]]), tuple([3*i-1], [[3*i+1]]))
-        end
+        # for i = 1:N
+        #     push!(basis, tuple([3*i-1], Vector{Int}[]))
+        # end
+        # for i = 1:N-1
+        #     push!(basis, tuple([3*i-2;3*i+2], Vector{Int}[]), tuple([3*i-1], [[3*i+1]]), tuple([3*i-2], [[3*i+2]]), tuple([3*i-1;3*i+1], Vector{Int}[]))
+        # end
         for i = 1:N
             push!(basis, tuple([3*i], Vector{Int}[]))
         end
         for i = 1:N-1
-            push!(basis, tuple([3*i-2;3*i+3], Vector{Int}[]), tuple([3*i;3*i+1], Vector{Int}[]), tuple([3*i-2], [[3*i+3]]), tuple([3*i], [[3*i+1]]))
+            push!(basis, tuple([3*i-2;3*i+3], Vector{Int}[]), tuple([3*i;3*i+1], Vector{Int}[]))
+        end
+        if d > 2
+            for i = 1:N-2
+               push!(basis, tuple([3*i;3*i+3;3*i+6], Vector{Int}[]), tuple([3*i;3*i+1;3*i+4], Vector{Int}[]), tuple([3*i-2;3*i+3;3*i+4], Vector{Int}[]),
+               tuple([3*i-2;3*i+1;3*i+6], Vector{Int}[]), tuple([3*i;3*i+2;3*i+5], Vector{Int}[]), tuple([3*i-1;3*i+3;3*i+5], Vector{Int}[]), tuple([3*i-1;3*i+2;3*i+6], Vector{Int}[]))
+            end
         end
     end
     return basis

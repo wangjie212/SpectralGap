@@ -1,15 +1,15 @@
 function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     println("********************************** SpectralGap **********************************")
     println("SpectralGap is launching...")
-    basis = [get_basis(N, d, label=i) for i = 1:2]
+    basis = [get_basis(N, d, label=i) for i = 1:3]
     lb = length.(basis)
-    gbasis = get_wbasis(N, d-1, sites=Vector(2:N-1))
+    gbasis = get_wbasis(N, d-1)
     lgb = length(gbasis)
     if QUIET == false
         println("The block sizes are $lb.")
     end
     tsupp = [[Int[]]]
-    for i = 1:2, j = 1:lb[i], k = j:lb[i]
+    for i = 1:3, j = 1:lb[i], k = j:lb[i]
         @inbounds bi,c = reduce!([basis[i][j][1]; basis[i][k][1]])
         if c != 0
             if isempty(bi)
@@ -29,13 +29,11 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     model = Model(optimizer_with_attributes(Mosek.Optimizer))
     set_optimizer_attribute(model, MOI.Silent(), QUIET)
     cons = [AffExpr(0) for i=1:length(tsupp)]
-    pos = Vector{Symmetric{VariableRef}}(undef, 2)
-    for i = 1:2
+    pos = Vector{Symmetric{VariableRef}}(undef, 3)
+    for i = 1:3
         pos[i] = @variable(model, [1:lb[i], 1:lb[i]], PSD)
-        # pos[i] = @variable(model, [1:2*lb[i], 1:2*lb[i]], PSD)
         for j = 1:lb[i], k = j:lb[i]
             @inbounds bi,c = reduce!([basis[i][j][1]; basis[i][k][1]], realify=true)
-            # @inbounds bi,c = reduce!([basis[i][j][1]; basis[i][k][1]])
             if c != 0
                 if isempty(bi)
                     if isempty(basis[i][j][2]) && isempty(basis[i][k][2])
@@ -46,17 +44,6 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
                 else
                     Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]; [bi]]))
                 end
-                # pp1 = pos[i][j, k] + pos[i][j+lb[i], k+lb[i]]
-                # pp2 = pos[i][j+lb[i], k] - pos[i][k+lb[i], j]
-                # if j == k
-                #     @inbounds add_to_expression!(cons[Locb], real(c), pp1)
-                # else
-                #     if imag(c) == 0
-                #         @inbounds add_to_expression!(cons[Locb], 2*real(c), pp1)
-                #     else
-                #         @inbounds add_to_expression!(cons[Locb], -2*imag(c), pp2)
-                #     end
-                # end
                 if j == k
                     @inbounds add_to_expression!(cons[Locb], c, pos[i][j,k])
                 else
@@ -73,6 +60,7 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
             @inbounds bi,c = reduce!([gbasis[i]; H.supp[k]; gbasis[j]])
             if c != 0
                 Locb = bfind(tsupp, [bi])
+                println(bi)
                 if i == j
                     @inbounds add_to_expression!(cons[Locb], real(c)*H.coe[k], pp1)
                 else
@@ -133,22 +121,24 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     status = termination_status(model)
     @show status
     dual_var = -dual(con)
-    i = 1
-    mmat = zeros(ComplexF16, lb[i], lb[i])
-    for j = 1:lb[i], k = 1:lb[i]
-        @inbounds bi,c = reduce!([basis[i][j][1]; basis[i][k][1]])
-        if c != 0
-            if isempty(bi)
-                if isempty(basis[i][j][2]) && isempty(basis[i][k][2])
-                    Locb = 1
+    mmat = Vector{Matrix{ComplexF16}}(undef, 3)
+    for i = 1:3
+        mmat[i] = zeros(ComplexF16, lb[i], lb[i])
+        for j = 1:lb[i], k = 1:lb[i]
+            @inbounds bi,c = reduce!([basis[i][j][1]; basis[i][k][1]])
+            if c != 0
+                if isempty(bi)
+                    if isempty(basis[i][j][2]) && isempty(basis[i][k][2])
+                        Locb = 1
+                    else
+                        Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]]))
+                    end
                 else
-                    Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]]))
+                    Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]; [bi]]))
                 end
-            else
-                Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]; [bi]]))
+                mmat[i][j,k] = c*dual_var[Locb]
             end
-            mmat[j,k] = c*dual_var[Locb]
         end
     end
-    return status,mmat
+    return status,basis,mmat
 end
