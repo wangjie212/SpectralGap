@@ -136,31 +136,6 @@ function get_sbasis(N)
     return basis
 end
 
-# function get_basis(N, d; label=1)
-#     if label == 1
-#         basis = [tuple(Int[], Vector{Int}[])]
-#         append!(basis, [tuple([3i-2], Vector{Int}[]) for i = 1:N])
-#         for i = 1:N-1
-#             append!(basis, [tuple([3i-1;3j+2], Vector{Int}[]) for j = i:N-1])
-#             append!(basis, [tuple([3i;3j+3], Vector{Int}[]) for j = i:N-1])
-#         end
-#         if d > 2
-#             append!(basis, [tuple(Int[], [[3i-2]]) for i = 1:ceil(Int, N/2)])
-#             for i = 1:ceil(Int, N/2)
-#                 append!(basis, [tuple(Int[], [[3i-2], [3j-2]]) for j = i:ceil(Int, N/2)])
-#             end
-#             for i = 1:N-1
-#                 append!(basis, [tuple([3i-2;3j+1], Vector{Int}[]) for j = i:N-1])
-#             end
-#         end
-#         append!(basis, [tuple([3i-1;3i+3], Vector{Int}[]) for i = 1:N-1])
-#         append!(basis, [tuple([3i;3i+2], Vector{Int}[]) for i = 1:N-1])
-#     else
-#         basis = [tuple([3i], Vector{Int}[]) for i = 1:N]
-#     end
-#     return basis
-# end
-
 function get_basis(N, d; label=1)
     if label == 1
         basis = [tuple(Int[], Vector{Int}[])]

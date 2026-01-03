@@ -140,8 +140,8 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     # end
     @variable(model, lower)
     cons[1] += lower
-    # @constraint(model, cons .== 0)
-    @constraint(model, con, cons==zeros(length(cons)))
+    @constraint(model, cons .== 0)
+    # @constraint(model, con, cons==zeros(length(cons)))
     @objective(model, Max, lower)
     if QUIET == false
         println("Solving the SDP...")
@@ -154,25 +154,25 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     end
     status = termination_status(model)
     @show status
-    dual_var = -dual(con)
-    mmat = Vector{Matrix{ComplexF16}}(undef, length(basis))
-    for i = 1:length(basis)
-        mmat[i] = zeros(ComplexF16, lb[i], lb[i])
-        for j = 1:lb[i], k = 1:lb[i]
-            @inbounds bi,c = reduce!([basis[i][j][1]; basis[i][k][1]], N)
-            if c != 0
-                if isempty(bi)
-                    if isempty(basis[i][j][2]) && isempty(basis[i][k][2])
-                        Locb = 1
-                    else
-                        Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]]))
-                    end
-                else
-                    Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]; [bi]]))
-                end
-                mmat[i][j,k] = c*dual_var[Locb]
-            end
-        end
-    end
-    return status,basis,mmat
+    # dual_var = -dual(con)
+    # mmat = Vector{Matrix{ComplexF16}}(undef, length(basis))
+    # for i = 1:length(basis)
+    #     mmat[i] = zeros(ComplexF16, lb[i], lb[i])
+    #     for j = 1:lb[i], k = 1:lb[i]
+    #         @inbounds bi,c = reduce!([basis[i][j][1]; basis[i][k][1]], N)
+    #         if c != 0
+    #             if isempty(bi)
+    #                 if isempty(basis[i][j][2]) && isempty(basis[i][k][2])
+    #                     Locb = 1
+    #                 else
+    #                     Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]]))
+    #                 end
+    #             else
+    #                 Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]; [bi]]))
+    #             end
+    #             mmat[i][j,k] = c*dual_var[Locb]
+    #         end
+    #     end
+    # end
+    return status
 end
