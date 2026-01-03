@@ -1,16 +1,18 @@
 function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     println("********************************** SpectralGap **********************************")
     println("SpectralGap is launching...")
-    basis = [get_basis(N, d, label=i) for i in [1,2]]
+    basis = [get_basis(N, d, label=i) for i in [1]]
     lb = length.(basis)
-    gbasis = [get_wbasis(N, d-1, label=i) for i in [1,2]] 
+    gbasis = [get_wbasis(N, d-1, label=i) for i in [2]] 
     lgb = length.(gbasis)
-    if d > 2
-        tbasis = [tuple(a, b) for a in get_wbasis(N, 1, label=1), b in get_sbasis(N)]
-        ltb = length(tbasis)
-    end
+    bs = [lb; lgb]
+    # if d > 2
+    #     tbasis = [tuple(a, b) for a in get_wbasis(N, 1, label=1), b in get_sbasis(N)]
+    #     ltb = length(tbasis)
+    #     bs = [bs; ltb]
+    # end
     if QUIET == false
-        println("The block sizes are $lb.")
+        println("The block sizes are $bs.")
     end
     tsupp = Vector{Vector{Int}}[]
     for i = 1:length(basis), j = 1:lb[i], k = j:lb[i]
@@ -87,49 +89,55 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
             end
         end
     end
-    if d > 2
-        tpos = @variable(model, [1:ltb, 1:ltb], PSD)
-        for i = 1:ltb, j = i:ltb
-            for k = 1:length(H.supp)
-                if !isreal(reduce2!(reduce3!(reduce1!([H.supp[k]; tbasis[j][1]])))[2])
-                    @inbounds bi,c = reduce!([tbasis[i][1]; H.supp[k]; tbasis[j][1]], N, realify=true)
-                    if c != 0
-                        if isempty(bi)
-                            Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]]))
-                        else
-                            Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [bi]]))
-                        end
-                        if i == j
-                            @inbounds add_to_expression!(cons[Locb], 2c*H.coe[k], tpos[i, j])
-                        else
-                            @inbounds add_to_expression!(cons[Locb], 4c*H.coe[k], tpos[i, j])
-                        end
-                    end
-                end
-            end
-            @inbounds bi,c = reduce!([tbasis[i][1]; tbasis[j][1]], N, realify=true)
-            if c != 0
-                if isempty(bi)
-                    Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]]))
-                else
-                    Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [bi]]))
-                end
-                if i == j
-                    @inbounds add_to_expression!(cons[Locb], -c*gamma, tpos[i, j])
-                else
-                    @inbounds add_to_expression!(cons[Locb], -2c*gamma, tpos[i, j])
-                end
-            end
-            if !isz(tbasis[i][1]) && !isz(tbasis[j][1])
-                Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [reduce4(tbasis[i][1], N)]; [reduce4(tbasis[j][1], N)]]))
-                if i == j
-                    @inbounds add_to_expression!(cons[Locb], gamma, tpos[i, j])
-                else
-                    @inbounds add_to_expression!(cons[Locb], 2*gamma, tpos[i, j])
-                end
-            end
-        end
-    end
+    # if d > 2
+    #     tpos = @variable(model, [1:ltb, 1:ltb], PSD)
+    #     for i = 1:ltb, j = i:ltb
+    #         for k = 1:length(H.supp)
+    #             if !isreal(reduce2!(reduce3!(reduce1!([H.supp[k]; tbasis[j][1]])))[2])
+    #                 @inbounds bi,c = reduce!([tbasis[i][1]; H.supp[k]; tbasis[j][1]], N, realify=true)
+    #                 if c != 0
+    #                     if isempty(bi)
+    #                         Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]]))
+    #                     else
+    #                         Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [bi]]))
+    #                     end
+    #                     if Locb !== nothing
+    #                         if i == j
+    #                             @inbounds add_to_expression!(cons[Locb], 2c*H.coe[k], tpos[i, j])
+    #                         else
+    #                             @inbounds add_to_expression!(cons[Locb], 4c*H.coe[k], tpos[i, j])
+    #                         end
+    #                     end
+    #                 end
+    #             end
+    #         end
+    #         @inbounds bi,c = reduce!([tbasis[i][1]; tbasis[j][1]], N, realify=true)
+    #         if c != 0
+    #             if isempty(bi)
+    #                 Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]]))
+    #             else
+    #                 Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [bi]]))
+    #             end
+    #             if Locb !== nothing
+    #                 if i == j
+    #                     @inbounds add_to_expression!(cons[Locb], -c*gamma, tpos[i, j])
+    #                 else
+    #                     @inbounds add_to_expression!(cons[Locb], -2c*gamma, tpos[i, j])
+    #                 end
+    #             end
+    #         end
+    #         if !isz(tbasis[i][1]) && !isz(tbasis[j][1])
+    #             Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [reduce4(tbasis[i][1], N)]; [reduce4(tbasis[j][1], N)]]))
+    #             if Locb !== nothing
+    #                 if i == j
+    #                     @inbounds add_to_expression!(cons[Locb], gamma, tpos[i, j])
+    #                 else
+    #                     @inbounds add_to_expression!(cons[Locb], 2*gamma, tpos[i, j])
+    #                 end
+    #             end
+    #         end
+    #     end
+    # end
     @variable(model, lower)
     cons[1] += lower
     # @constraint(model, cons .== 0)
@@ -166,5 +174,5 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
             end
         end
     end
-    return status,basis,mmat,tsupp
+    return status,basis,mmat
 end
