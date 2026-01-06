@@ -1,5 +1,6 @@
 module SpectralGap
 
+using MathOptInterface
 using JuMP
 using MosekTools
 using LinearAlgebra

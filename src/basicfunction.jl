@@ -152,6 +152,7 @@ function get_basis(N, d; label=1)
             end
         end
         append!(basis, [tuple([3i;3i+2], Vector{Int}[]) for i = 1:N-2])
+        append!(basis, [tuple([3i-1;3i+3], Vector{Int}[]) for i = 2:N-1])
     elseif label == 2
         basis = [tuple(Int[1], Vector{Int}[]), tuple(Int[3N-2], Vector{Int}[]), tuple(Int[], [[1]])]
         append!(basis, [tuple([2;3i-1], Vector{Int}[]) for i = 2:N-1])

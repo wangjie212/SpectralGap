@@ -174,5 +174,6 @@ function certify_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     #         end
     #     end
     # end
-    return status
+    flag = status == MathOptInterface.OPTIMAL ? 1 : 0
+    return flag
 end
