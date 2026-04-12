@@ -69,8 +69,12 @@ function reduce3!(a::Vector{Int})
 end
 
 # identify zeros by sign symmetry
+# function isz(a::Vector{Int})
+#     return any(i->isodd(count(isequal(i), mod.(a,3))), [0, 2])
+# end
+
 function isz(a::Vector{Int})
-    return any(i->isodd(count(isequal(i), mod.(a,3))), [0, 2])
+    return any(i->isodd(count(isequal(i), mod.(a,3))), [0, 1, 2])
 end
 
 # reduction w.r.t mirror symmetry
@@ -94,8 +98,8 @@ function reduce!(a::Vector{Int}, N; realify=false)
     if !isempty(a)
         if isz(a)
            coef = 0
-        else
-           a = reduce4(a, N)
+        # else
+        #    a = reduce4(a, N)
         end
     end
     return a,coef
@@ -153,7 +157,7 @@ function get_basis(N, d; label=1)
         end
         append!(basis, [tuple([3i;3i+2], Vector{Int}[]) for i = 1:N-2])
         append!(basis, [tuple([3i-1;3i+3], Vector{Int}[]) for i = 2:N-1])
-    elseif label == 2
+    else
         basis = [tuple(Int[1], Vector{Int}[]), tuple(Int[3N-2], Vector{Int}[]), tuple(Int[], [[1]])]
         append!(basis, [tuple([2;3i-1], Vector{Int}[]) for i = 2:N-1])
         append!(basis, [tuple([3i-1;3N-1], Vector{Int}[]) for i = 2:N-1])
@@ -163,8 +167,58 @@ function get_basis(N, d; label=1)
             append!(basis, [tuple([3i-2;3N-2], Vector{Int}[]) for i = 2:N-1])
         end
         push!(basis, tuple([2;6], Vector{Int}[]), tuple([3N-3;3N-1], Vector{Int}[]))
+    end
+    return basis
+end
+
+function get_kagome_basis(N, triples, edges, d; label=1)
+    if label == 1
+        basis = [tuple(Int[], Vector{Int}[])]
+        for i = 1:N-1
+            append!(basis, [tuple([3i-2;3j+1], Vector{Int}[]) for j = i:N-1])
+            # append!(basis, [tuple([3i-1;3j+2], Vector{Int}[]) for j = i:N-1])
+            # append!(basis, [tuple([3i;3j+3], Vector{Int}[]) for j = i:N-1])
+        end
+        if d > 2
+            push!(basis, tuple([1;5;9], Vector{Int}[]), tuple([1;6;8], Vector{Int}[]), tuple([2;4;9], Vector{Int}[]), tuple([2;6;7], Vector{Int}[]), tuple([3;4;8], Vector{Int}[]), tuple([3;5;7], Vector{Int}[]))
+            push!(basis, tuple([1;11;15], Vector{Int}[]), tuple([1;12;14], Vector{Int}[]), tuple([2;10;15], Vector{Int}[]), tuple([2;12;13], Vector{Int}[]), tuple([3;10;14], Vector{Int}[]), tuple([3;11;13], Vector{Int}[]))
+        end
     else
-        basis = [tuple([3i], Vector{Int}[]) for i = 1:N]
+        basis = [tuple([3i-2], Vector{Int}[]) for i = 1:N]
+        if d > 2
+            push!(basis, tuple([1;4;7], Vector{Int}[]), tuple([1;5;8], Vector{Int}[]), tuple([2;4;8], Vector{Int}[]), tuple([2;5;7], Vector{Int}[]), tuple([1;6;9], Vector{Int}[]), tuple([3;4;9], Vector{Int}[]), tuple([3;6;7], Vector{Int}[]))
+            push!(basis, tuple([1;10;13], Vector{Int}[]), tuple([1;11;14], Vector{Int}[]), tuple([2;10;14], Vector{Int}[]), tuple([2;11;13], Vector{Int}[]), tuple([1;12;15], Vector{Int}[]), tuple([3;10;15], Vector{Int}[]), tuple([3;12;13], Vector{Int}[]))
+        end
+        for a in edges
+            append!(basis, [tuple([3*a[1]-1;3*a[2]], Vector{Int}[]), tuple([3*a[1];3*a[2]-1], Vector{Int}[])])
+        end
+        for a in triples
+            append!(basis, [tuple([3*a[1]-1;3*a[2]], Vector{Int}[]), tuple([3*a[1]-1;3*a[3]], Vector{Int}[]), tuple([3*a[2]-1;3*a[3]], Vector{Int}[]), tuple([3*a[1];3*a[2]-1], Vector{Int}[]), tuple([3*a[1];3*a[3]-1], Vector{Int}[]), tuple([3*a[2];3*a[3]-1], Vector{Int}[])])
+        end
+    end
+    return basis
+end
+
+function get_kagome_sbasis(N)
+    basis = [[Vector{Int}[]]; [[[3i-2]] for i = 1:N]]
+    return basis
+end
+
+function get_kagome_wbasis(N, d; label=1)
+    if label == 1
+        basis = []
+    else
+        if N == 5
+            basis = [[1]]
+        elseif N == 13
+            basis = [[3i-2] for i = 1:5]
+        elseif N == 27
+            basis = [[3i-2] for i = 1:13]
+        elseif N == 45
+            basis = [[3i-2] for i = 1:27]
+        else
+            @error "Wrong number of sites!"
+        end
     end
     return basis
 end
