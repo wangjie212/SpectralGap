@@ -69,16 +69,23 @@ function reduce3!(a::Vector{Int})
 end
 
 # identify zeros by sign symmetry
-# function isz(a::Vector{Int})
-#     return any(i->isodd(count(isequal(i), mod.(a,3))), [0, 2])
-# end
+function isz(a::Vector{Int}; model="Ising")
+    if model == "Ising"
+        return any(i->isodd(count(isequal(i), mod.(a,3))), [0,2]) # for Ising model
+    else
+        return any(i->isodd(count(isequal(i), mod.(a,3))), [0,1,2]) # for Kagome lattice
+    end
+end
 
-function isz(a::Vector{Int})
-    return any(i->isodd(count(isequal(i), mod.(a,3))), [0, 1, 2])
+# reduction w.r.t permutation symmetry
+function reduce_perm(a::Vector{Int})
+    ra = smod.(a, 3)
+    sym = [[1;2;3], [1;3;2], [2;1;3], [2;3;1], [3;1;2], [3;2;1]]
+    return findmin([UInt16.(3*(ceil.(Int, a./3).-1) .+ sym[i][ra]) for i=1:6])[1]
 end
 
 # reduction w.r.t mirror symmetry
-function reduce4(a::Vector{Int}, N)
+function reduce_mirror(a::Vector{Int}, N)
     ra = reverse(a)
     ma = 3*(N .- ceil.(Int, ra/3)) + smod.(ra, 3)
     return min(a, ma)
@@ -90,16 +97,20 @@ function smod(i, s)
 end
 
 # implement all reductions
-function reduce!(a::Vector{Int}, N; realify=false)
+function reduce!(a::Vector{Int}, N; model="Ising", realify=false, identify_zeros=true, symmetry=true)
     reduce1!(a)
     reduce3!(a)
     a,coef = reduce2!(a, realify=realify)
     reduce3!(a)
     if !isempty(a)
-        if isz(a)
+        if identify_zeros && isz(a, model=model)
            coef = 0
-        # else
-        #    a = reduce4(a, N)
+        elseif symmetry == true
+            if model == "Ising"
+                a = reduce_mirror(a, N)
+            else
+                a = reduce_perm(a)
+            end
         end
     end
     return a,coef
@@ -124,19 +135,51 @@ end
 
 function get_wbasis(N, d; label=1)
     if label == 1
-        basis = [[3i-2] for i = 2:N-1]
+        basis = [[Int[]]; [[3i-2] for i = 2:N-1]]
+        if d > 2
+            for i = 2:N-3
+               push!(basis, [3i-2;3i+1;3i+4], [3i-2;3i+2;3i+5], [3i-1;3i+1;3i+5], [3i-1;3i+2;3i+4], [3i-2;3i+3;3i+6], [3i;3i+1;3i+6], [3i;3i+3;3i+4])
+               push!(basis, [3i-2;3i+2;3i+5], [3i-1;3i+1;3i+5], [3i-1;3i+2;3i+4], [3i-2;3i+3;3i+6], [3i;3i+1;3i+6], [3i;3i+3;3i+4])
+            end
+        end
+        if d > 1
+            append!(basis, [[3i-2;3i+1] for i = 2:N-2])
+            append!(basis, [[3i-1;3i+2] for i = 2:N-2])
+            append!(basis, [[3i;3i+3] for i = 2:N-2])
+            append!(basis, [[3i-1;3i+3] for i = 2:N-2])
+            append!(basis, [[3i;3i+2] for i = 2:N-2])
+        end
     else
-        basis = [[[3i-1] for i = 2:N-1]; [[3i] for i = 2:N-1]]
+        basis = [[3i-1] for i = 2:N-1]
+        if d > 1
+            append!(basis, [[3i-2;3i+2] for i = 2:N-2])
+            append!(basis, [[3i-1;3i+1] for i = 2:N-2])
+        end
+        if d > 2
+            for i = 2:N-3
+               push!(basis, [3i-1;3i+2;3i+5], [3i-1;3i+1;3i+4], [3i-2;3i+2;3i+4], [3i-2;3i+1;3i+5], [3i-1;3i+3;3i+6], [3i;3i+2;3i+6], [3i;3i+3;3i+5])
+            end
+        end
+        append!(basis, [[3i] for i = 2:N-1])
         if d > 1
             append!(basis, [[3i-2;3i+3] for i = 2:N-2])
             append!(basis, [[3i;3i+1] for i = 2:N-2])
+        end
+        if d > 2
+            for i = 2:N-3
+                push!(basis, [3i;3i+3;3i+6], [3i;3i+1;3i+4], [3i-2;3i+3;3i+4], [3i-2;3i+1;3i+6], [3i;3i+2;3i+5], [3i-1;3i+3;3i+5], [3i-1;3i+2;3i+6])
+            end
         end
     end
     return basis
 end
 
-function get_sbasis(N)
-    basis = [[Vector{Int}[]]; [[[3i-2]] for i = 1:ceil(Int, N/2)]]
+function get_sbasis(N, d)
+    # basis = [[Vector{Int}[]]; [[[3i-2]] for i = 1:ceil(Int, N/2)]]
+    basis = [[Vector{Int}[]]; [[[3i-2]] for i = 1:ceil(Int, N/2)]; [[[3i-1]] for i = 1:ceil(Int, N/2)]; [[[3i]] for i = 1:ceil(Int, N/2)]]
+    if d > 1
+        append!(basis, [[[3i-2;3i+1]] for i = 1:floor(Int, N/2)], [[[3i-1;3i+2]] for i = 1:floor(Int, N/2)], [[[3i;3i+3]] for i = 1:floor(Int, N/2)])
+    end
     return basis
 end
 
@@ -144,29 +187,105 @@ function get_basis(N, d; label=1)
     if label == 1
         basis = [tuple(Int[], Vector{Int}[])]
         append!(basis, [tuple([3i-2], Vector{Int}[]) for i = 2:N-1])
-        for i = 2:N-2
-            append!(basis, [tuple([3i-1;3j+2], Vector{Int}[]) for j = i:N-2])
-        end
-        for i = 1:N-1
-            append!(basis, [tuple([3i;3j+3], Vector{Int}[]) for j = i:N-1])
-        end
-        if d > 2
+        append!(basis, [tuple(Int[], [[3i-2]]) for i = 1:ceil(Int, N/2)])
+        if d > 1
             for i = 2:N-2
+                append!(basis, [tuple([3i-1;3j+2], Vector{Int}[]) for j = i:N-2])
                 append!(basis, [tuple([3i-2;3j+1], Vector{Int}[]) for j = i:N-2])
             end
+            for i = 1:N-1
+                append!(basis, [tuple([3i;3j+3], Vector{Int}[]) for j = i:N-1])
+                push!(basis, tuple([3i+1], [reduce_mirror([3i-2], N)]), tuple([3i-2], [reduce_mirror([3i+1], N)]))
+            end
+            append!(basis, [tuple(Int[], [[3i-2], [3i+1]]) for i = 1:floor(Int, N/2)])
+            append!(basis, [tuple(Int[], [[3i-2;3i+1]]) for i = 1:floor(Int, N/2)], [tuple(Int[], [[3i-1;3i+2]]) for i = 1:floor(Int, N/2)], [tuple(Int[], [[3i;3i+3]]) for i = 1:floor(Int, N/2)])
         end
-        append!(basis, [tuple([3i;3i+2], Vector{Int}[]) for i = 1:N-2])
-        append!(basis, [tuple([3i-1;3i+3], Vector{Int}[]) for i = 2:N-1])
-    else
-        basis = [tuple(Int[1], Vector{Int}[]), tuple(Int[3N-2], Vector{Int}[]), tuple(Int[], [[1]])]
-        append!(basis, [tuple([2;3i-1], Vector{Int}[]) for i = 2:N-1])
-        append!(basis, [tuple([3i-1;3N-1], Vector{Int}[]) for i = 2:N-1])
         if d > 2
-            append!(basis, [tuple(Int[], [[1], [3i-2]]) for i = 2:ceil(Int, N/2)])
-            append!(basis, [tuple([1;3i-2], Vector{Int}[]) for i = 2:N-1])
-            append!(basis, [tuple([3i-2;3N-2], Vector{Int}[]) for i = 2:N-1])
+            for i = 1:N-2
+               push!(basis, tuple([3i-2;3i+1;3i+4], Vector{Int}[]), tuple([3i-2;3i+2;3i+5], Vector{Int}[]), tuple([3i-1;3i+1;3i+5], Vector{Int}[]),
+               tuple([3i-1;3i+2;3i+4], Vector{Int}[]), tuple([3i-2;3i+3;3i+6], Vector{Int}[]), tuple([3i;3i+1;3i+6], Vector{Int}[]), tuple([3i;3i+3;3i+4], Vector{Int}[]))
+               push!(basis, tuple([3i-2;3i+2;3i+5], Vector{Int}[]), tuple([3i-1;3i+1;3i+5], Vector{Int}[]), tuple([3i-1;3i+2;3i+4], Vector{Int}[]))
+               push!(basis, tuple([3i-2;3i+3;3i+6], Vector{Int}[]), tuple([3i;3i+1;3i+6], Vector{Int}[]), tuple([3i;3i+3;3i+4], Vector{Int}[]))
+            end
         end
-        push!(basis, tuple([2;6], Vector{Int}[]), tuple([3N-3;3N-1], Vector{Int}[]))
+        if d > 3
+            for i = 1:N-3
+                push!(basis, tuple([3i-2;3i+1;3i+4;3i+7], Vector{Int}[]), tuple([3i-1;3i+2;3i+5;3i+8], Vector{Int}[]), tuple([3i;3i+3;3i+6;3i+9], Vector{Int}[]),
+                tuple([3i-2;3i+1;3i+5;3i+8], Vector{Int}[]), tuple([3i-2;3i+2;3i+4;3i+8], Vector{Int}[]), tuple([3i-1;3i+1;3i+4;3i+8], Vector{Int}[]),
+                tuple([3i-2;3i+2;3i+5;3i+7], Vector{Int}[]), tuple([3i-1;3i+1;3i+5;3i+7], Vector{Int}[]), tuple([3i-1;3i+2;3i+4;3i+7], Vector{Int}[]),
+                tuple([3i-1;3i+2;3i+6;3i+9], Vector{Int}[]), tuple([3i-1;3i+3;3i+5;3i+9], Vector{Int}[]), tuple([3i;3i+2;3i+5;3i+9], Vector{Int}[]),
+                tuple([3i-1;3i+3;3i+6;3i+8], Vector{Int}[]), tuple([3i;3i+2;3i+6;3i+8], Vector{Int}[]), tuple([3i;3i+3;3i+5;3i+8], Vector{Int}[]),
+                tuple([3i;3i+3;3i+4;3i+7], Vector{Int}[]), tuple([3i;3i+1;3i+6;3i+7], Vector{Int}[]), tuple([3i-2;3i+3;3i+6;3i+7], Vector{Int}[]),
+                tuple([3i;3i+1;3i+4;3i+9], Vector{Int}[]), tuple([3i-2;3i+3;3i+4;3i+9], Vector{Int}[]), tuple([3i-2;3i+1;3i+6;3i+9], Vector{Int}[]),)
+            end
+        end
+        if d > 1
+            for i = 1:N-1
+                append!(basis, [tuple([3i-1;3j+3], Vector{Int}[]) for j = i:N-1])
+                append!(basis, [tuple([3i;3j+2], Vector{Int}[]) for j = i:N-1])
+            end
+        end
+        if d > 3
+            for i = 1:N-3
+                push!(basis, tuple([3i-2;3i+1;3i+5;3i+9], Vector{Int}[]), tuple([3i-2;3i+2;3i+4;3i+9], Vector{Int}[]), tuple([3i-1;3i+1;3i+4;3i+9], Vector{Int}[]),
+                tuple([3i-2;3i+2;3i+6;3i+7], Vector{Int}[]), tuple([3i-1;3i+1;3i+6;3i+7], Vector{Int}[]), tuple([3i-1;3i+3;3i+4;3i+7], Vector{Int}[]),
+                tuple([3i-2;3i+1;3i+6;3i+8], Vector{Int}[]), tuple([3i-2;3i+3;3i+4;3i+8], Vector{Int}[]), tuple([3i;3i+1;3i+4;3i+8], Vector{Int}[]),
+                tuple([3i-2;3i+3;3i+5;3i+7], Vector{Int}[]), tuple([3i;3i+1;3i+5;3i+7], Vector{Int}[]), tuple([3i;3i+2;3i+4;3i+7], Vector{Int}[]),
+                tuple([3i-1;3i+2;3i+5;3i+9], Vector{Int}[]), tuple([3i-1;3i+2;3i+6;3i+8], Vector{Int}[]), tuple([3i-1;3i+3;3i+5;3i+8], Vector{Int}[]), tuple([3i-2;3i+2;3i+5;3i+8], Vector{Int}[]),
+                tuple([3i;3i+3;3i+6;3i+8], Vector{Int}[]), tuple([3i;3i+3;3i+5;3i+9], Vector{Int}[]), tuple([3i;3i+2;3i+6;3i+9], Vector{Int}[]), tuple([3i-1;3i+3;3i+6;3i+9], Vector{Int}[]))
+            end
+        end
+    elseif label == 2
+        basis = [tuple(Int[1], Vector{Int}[]), tuple(Int[3N-2], Vector{Int}[]), tuple(Int[], [[1]])]
+        if d > 1
+            append!(basis, [tuple([2;3i-1], Vector{Int}[]) for i = 2:N-1])
+            append!(basis, [tuple([3i-1;3N-1], Vector{Int}[]) for i = 2:N-1])
+            append!(basis, [tuple([1;3i-2], Vector{Int}[]) for i = 2:N-1])
+            push!(basis, tuple([2;6], Vector{Int}[]), tuple([3N-3;3N-1], Vector{Int}[]))
+        end
+    else
+        basis = [tuple([3i-1], Vector{Int}[]) for i = 1:N]
+        if d > 1
+            append!(basis, [tuple([3i-2;3i+2], Vector{Int}[])  for i = 2:N-2])
+            append!(basis, [tuple([3i-1;3i+1], Vector{Int}[]) for i = 2:N-2])
+        end
+        if d > 2
+            for i = 1:N-2
+               push!(basis, tuple([3i-1;3i+2;3i+5], Vector{Int}[]), tuple([3i-1;3i+1;3i+4], Vector{Int}[]), tuple([3i-2;3i+2;3i+4], Vector{Int}[]), tuple([3i-2;3i+1;3i+5], Vector{Int}[]),
+               tuple([3i-1;3i+3;3i+6], Vector{Int}[]), tuple([3i;3i+2;3i+6], Vector{Int}[]), tuple([3i;3i+3;3i+5], Vector{Int}[]))
+            end
+        end
+        if d > 3
+            for i = 1:N-3
+                push!(basis, tuple([3i;3i+3;3i+4;3i+8], Vector{Int}[]), tuple([3i;3i+1;3i+6;3i+8], Vector{Int}[]), tuple([3i-2;3i+3;3i+6;3i+8], Vector{Int}[]),
+                tuple([3i-2;3i+3;3i+5;3i+9], Vector{Int}[]), tuple([3i;3i+1;3i+5;3i+9], Vector{Int}[]), tuple([3i-2;3i+2;3i+6;3i+9], Vector{Int}[]),
+                tuple([3i;3i+3;3i+5;3i+7], Vector{Int}[]), tuple([3i;3i+2;3i+6;3i+7], Vector{Int}[]), tuple([3i-1;3i+3;3i+6;3i+7], Vector{Int}[]),
+                tuple([3i-1;3i+3;3i+4;3i+9], Vector{Int}[]), tuple([3i;3i+2;3i+4;3i+9], Vector{Int}[]), tuple([3i-1;3i+1;3i+6;3i+9], Vector{Int}[]),
+                tuple([3i-2;3i+1;3i+4;3i+8], Vector{Int}[]), tuple([3i-2;3i+1;3i+5;3i+7], Vector{Int}[]), tuple([3i-2;3i+2;3i+4;3i+7], Vector{Int}[]), tuple([3i-1;3i+1;3i+4;3i+7], Vector{Int}[]),
+                tuple([3i-1;3i+2;3i+5;3i+7], Vector{Int}[]), tuple([3i-1;3i+2;3i+4;3i+8], Vector{Int}[]), tuple([3i-1;3i+1;3i+5;3i+8], Vector{Int}[]), tuple([3i-2;3i+2;3i+5;3i+8], Vector{Int}[]))
+            end
+        end
+        append!(basis, [tuple([3i], Vector{Int}[]) for i = 1:N])
+        if d > 1
+            append!(basis, [tuple([3i-2;3i+3], Vector{Int}[]) for i = 2:N-2])
+            append!(basis, [tuple([3i;3i+1], Vector{Int}[]) for i = 2:N-2])
+        end
+        if d > 2
+            for i = 1:N-2
+                push!(basis, tuple([3i;3i+3;3i+6], Vector{Int}[]), tuple([3i;3i+1;3i+4], Vector{Int}[]), tuple([3i-2;3i+3;3i+4], Vector{Int}[]), 
+                tuple([3i-2;3i+1;3i+6], Vector{Int}[]), tuple([3i;3i+2;3i+5], Vector{Int}[]), tuple([3i-1;3i+3;3i+5], Vector{Int}[]), tuple([3i-1;3i+2;3i+6], Vector{Int}[]))
+            end
+        end
+        if d > 3
+            for i = 1:N-3
+                push!(basis, tuple([3i-1;3i+2;3i+4;3i+9], Vector{Int}[]), tuple([3i-1;3i+1;3i+5;3i+9], Vector{Int}[]), tuple([3i-2;3i+2;3i+5;3i+9], Vector{Int}[]),
+                tuple([3i-1;3i+1;3i+6;3i+8], Vector{Int}[]), tuple([3i-2;3i+2;3i+6;3i+8], Vector{Int}[]), tuple([3i-2;3i+3;3i+5;3i+8], Vector{Int}[]),
+                tuple([3i-1;3i+2;3i+6;3i+7], Vector{Int}[]), tuple([3i-1;3i+3;3i+5;3i+7], Vector{Int}[]), tuple([3i;3i+2;3i+5;3i+7], Vector{Int}[]),
+                tuple([3i;3i+2;3i+4;3i+8], Vector{Int}[]), tuple([3i-1;3i+3;3i+4;3i+8], Vector{Int}[]), tuple([3i;3i+1;3i+5;3i+8], Vector{Int}[]),
+                tuple([3i-2;3i+1;3i+4;3i+9], Vector{Int}[]), tuple([3i-2;3i+1;3i+6;3i+7], Vector{Int}[]), tuple([3i-2;3i+3;3i+4;3i+7], Vector{Int}[]), tuple([3i;3i+1;3i+4;3i+7], Vector{Int}[]),             
+                tuple([3i;3i+3;3i+6;3i+7], Vector{Int}[]), tuple([3i;3i+3;3i+4;3i+9], Vector{Int}[]), tuple([3i;3i+1;3i+6;3i+9], Vector{Int}[]), tuple([3i-2;3i+3;3i+6;3i+9], Vector{Int}[]))
+            end
+        end
     end
     return basis
 end
@@ -176,24 +295,44 @@ function get_kagome_basis(N, triples, edges, d; label=1)
         basis = [tuple(Int[], Vector{Int}[])]
         for i = 1:N-1
             append!(basis, [tuple([3i-2;3j+1], Vector{Int}[]) for j = i:N-1])
-            # append!(basis, [tuple([3i-1;3j+2], Vector{Int}[]) for j = i:N-1])
-            # append!(basis, [tuple([3i;3j+3], Vector{Int}[]) for j = i:N-1])
+            append!(basis, [tuple([3i-1;3j+2], Vector{Int}[]) for j = i:N-1])
+            append!(basis, [tuple([3i;3j+3], Vector{Int}[]) for j = i:N-1])
         end
         if d > 2
-            push!(basis, tuple([1;5;9], Vector{Int}[]), tuple([1;6;8], Vector{Int}[]), tuple([2;4;9], Vector{Int}[]), tuple([2;6;7], Vector{Int}[]), tuple([3;4;8], Vector{Int}[]), tuple([3;5;7], Vector{Int}[]))
-            push!(basis, tuple([1;11;15], Vector{Int}[]), tuple([1;12;14], Vector{Int}[]), tuple([2;10;15], Vector{Int}[]), tuple([2;12;13], Vector{Int}[]), tuple([3;10;14], Vector{Int}[]), tuple([3;11;13], Vector{Int}[]))
+            for a in triples
+                push!(basis, tuple([3*a[1]-2;3*a[2]-1;3*a[3]], Vector{Int}[]), tuple([3*a[1]-2;3*a[2];3*a[3]-1], Vector{Int}[]), tuple([3*a[1]-1;3*a[2]-2;3*a[3]], Vector{Int}[]),
+                tuple([3*a[1]-1;3*a[2];3*a[3]-2], Vector{Int}[]), tuple([3*a[1];3*a[2]-2;3*a[3]-1], Vector{Int}[]), tuple([3*a[1];3*a[2]-1;3*a[3]-2], Vector{Int}[]))
+            end
         end
-    else
+    elseif label == 2
         basis = [tuple([3i-2], Vector{Int}[]) for i = 1:N]
         if d > 2
-            push!(basis, tuple([1;4;7], Vector{Int}[]), tuple([1;5;8], Vector{Int}[]), tuple([2;4;8], Vector{Int}[]), tuple([2;5;7], Vector{Int}[]), tuple([1;6;9], Vector{Int}[]), tuple([3;4;9], Vector{Int}[]), tuple([3;6;7], Vector{Int}[]))
-            push!(basis, tuple([1;10;13], Vector{Int}[]), tuple([1;11;14], Vector{Int}[]), tuple([2;10;14], Vector{Int}[]), tuple([2;11;13], Vector{Int}[]), tuple([1;12;15], Vector{Int}[]), tuple([3;10;15], Vector{Int}[]), tuple([3;12;13], Vector{Int}[]))
+            for a in triples
+                push!(basis, tuple([3*a[1]-2;3*a[2]-2;3*a[3]-2], Vector{Int}[]), tuple([3*a[1]-2;3*a[2]-1;3*a[3]-1], Vector{Int}[]), tuple([3*a[1]-1;3*a[2]-2;3*a[3]-1], Vector{Int}[]),
+                tuple([3*a[1]-1;3*a[2]-1;3*a[3]-2], Vector{Int}[]), tuple([3*a[1]-2;3*a[2];3*a[3]], Vector{Int}[]), tuple([3*a[1];3*a[2]-2;3*a[3]], Vector{Int}[]), tuple([3*a[1];3*a[2];3*a[3]-2], Vector{Int}[]))
+            end
         end
         for a in edges
             append!(basis, [tuple([3*a[1]-1;3*a[2]], Vector{Int}[]), tuple([3*a[1];3*a[2]-1], Vector{Int}[])])
         end
         for a in triples
             append!(basis, [tuple([3*a[1]-1;3*a[2]], Vector{Int}[]), tuple([3*a[1]-1;3*a[3]], Vector{Int}[]), tuple([3*a[2]-1;3*a[3]], Vector{Int}[]), tuple([3*a[1];3*a[2]-1], Vector{Int}[]), tuple([3*a[1];3*a[3]-1], Vector{Int}[]), tuple([3*a[2];3*a[3]-1], Vector{Int}[])])
+        end
+    elseif label == 3
+        basis = [tuple([3i-1], Vector{Int}[]) for i = 1:N]
+        for a in edges
+            append!(basis, [tuple([3*a[1]-2;3*a[2]], Vector{Int}[]), tuple([3*a[1];3*a[2]-2], Vector{Int}[])])
+        end
+        for a in triples
+            append!(basis, [tuple([3*a[1]-2;3*a[2]], Vector{Int}[]), tuple([3*a[1]-2;3*a[3]], Vector{Int}[]), tuple([3*a[2]-2;3*a[3]], Vector{Int}[]), tuple([3*a[1];3*a[2]-2], Vector{Int}[]), tuple([3*a[1];3*a[3]-2], Vector{Int}[]), tuple([3*a[2];3*a[3]-2], Vector{Int}[])])
+        end
+    else
+        basis = [tuple([3i], Vector{Int}[]) for i = 1:N]
+        for a in edges
+            append!(basis, [tuple([3*a[1]-1;3*a[2]-2], Vector{Int}[]), tuple([3*a[1]-2;3*a[2]-1], Vector{Int}[])])
+        end
+        for a in triples
+            append!(basis, [tuple([3*a[1]-1;3*a[2]-2], Vector{Int}[]), tuple([3*a[1]-1;3*a[3]-2], Vector{Int}[]), tuple([3*a[2]-1;3*a[3]-2], Vector{Int}[]), tuple([3*a[1]-2;3*a[2]-1], Vector{Int}[]), tuple([3*a[1]-2;3*a[3]-1], Vector{Int}[]), tuple([3*a[2]-2;3*a[3]-1], Vector{Int}[])])
         end
     end
     return basis
@@ -204,10 +343,19 @@ function get_kagome_sbasis(N)
     return basis
 end
 
-function get_kagome_wbasis(N, d; label=1)
+function get_kagome_wbasis(N, triples, edges, d; label=1)
     if label == 1
-        basis = []
-    else
+        basis = [Int[]]
+        if d > 1
+            for a in edges
+                append!(basis, [[3*a[1]-2;3*a[2]-2], [3*a[1]-1;3*a[2]-1], [3*a[1];3*a[2]]])
+            end
+            for a in triples
+                append!(basis, [[3*a[1]-2;3*a[2]-2], [3*a[1]-1;3*a[2]-1], [3*a[1];3*a[2]], [3*a[1]-2;3*a[3]-2], 
+                [3*a[1]-1;3*a[3]-1], [3*a[1];3*a[3]], [3*a[2]-2;3*a[3]-2], [3*a[2]-1;3*a[3]-1], [3*a[2];3*a[3]]])
+            end
+        end
+    elseif label == 2
         if N == 5
             basis = [[1]]
         elseif N == 13
@@ -216,6 +364,38 @@ function get_kagome_wbasis(N, d; label=1)
             basis = [[3i-2] for i = 1:13]
         elseif N == 45
             basis = [[3i-2] for i = 1:27]
+        else
+            @error "Wrong number of sites!"
+        end
+        if d > 1
+            for a in edges
+                append!(basis, [[3*a[1]-1;3*a[2]], [3*a[1];3*a[2]-1]])
+            end
+            for a in triples
+                append!(basis, [[3*a[1]-1;3*a[2]], [3*a[1]-1;3*a[3]], [3*a[2]-1;3*a[3]], [3*a[1];3*a[2]-1], [3*a[1];3*a[3]-1], [3*a[2];3*a[3]-1]])
+            end
+        end
+    elseif label == 3
+        if N == 5
+            basis = [[2]]
+        elseif N == 13
+            basis = [[3i-1] for i = 1:5]
+        elseif N == 27
+            basis = [[3i-1] for i = 1:13]
+        elseif N == 45
+            basis = [[3i-1] for i = 1:27]
+        else
+            @error "Wrong number of sites!"
+        end
+    else
+        if N == 5
+            basis = [[3]]
+        elseif N == 13
+            basis = [[3i] for i = 1:5]
+        elseif N == 27
+            basis = [[3i] for i = 1:13]
+        elseif N == 45
+            basis = [[3i] for i = 1:27]
         else
             @error "Wrong number of sites!"
         end
