@@ -80,8 +80,9 @@ end
 # reduction w.r.t permutation symmetry
 function reduce_perm(a::Vector{Int})
     ra = smod.(a, 3)
-    sym = [[1;2;3], [1;3;2], [2;1;3], [2;3;1], [3;1;2], [3;2;1]]
-    return findmin([UInt16.(3*(ceil.(Int, a./3).-1) .+ sym[i][ra]) for i=1:6])[1]
+    # sym = [[1;2;3], [1;3;2], [2;1;3], [2;3;1], [3;1;2], [3;2;1]]
+    sym = [[1;2;3], [2;3;1], [3;1;2]]
+    return findmin([UInt16.(3*(ceil.(Int, a./3).-1) .+ s[ra]) for s in sym])[1]
 end
 
 # reduction w.r.t mirror symmetry

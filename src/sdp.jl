@@ -400,9 +400,9 @@ end
 function certify_Heisenberg_kagome_gap(N::Int, H::ncpoly, triples, edges, inner_triples, inner_edges, gamma, d::Int; QUIET=false)
     println("********************************** SpectralGap **********************************")
     println("SpectralGap is launching...")
-    basis = [get_kagome_basis(N, triples, edges, d, label=i) for i = 1:2]
+    basis = [get_kagome_basis(N, triples, edges, d, label=i) for i = 1:4]
     lb = length.(basis)
-    gbasis = [get_kagome_wbasis(N, inner_triples, inner_edges, d-1, label=i) for i = 1:2]
+    gbasis = [get_kagome_wbasis(N, inner_triples, inner_edges, d-1, label=i) for i = 1:4]
     lgb = length.(gbasis)
     bs = [lb; lgb]
     if QUIET == false
