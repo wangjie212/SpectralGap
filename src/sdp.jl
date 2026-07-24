@@ -1,16 +1,11 @@
-function certify_Ising_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
+function certify_Ising_gap(N::Int, H::ncpoly, gamma, d::Int; lso=6, QUIET=false)
     println("********************************** SpectralGap **********************************")
     println("SpectralGap is launching...")
-    basis = [get_basis(N, d, label=i) for i in [1]]
+    basis = [get_basis(N, d, label=i) for i in [1,2]]
     lb = length.(basis)
-    gbasis = [get_wbasis(N, d-1, label=i) for i in [1,2]] 
+    gbasis = [get_bulkbasis(N, d-1, label=i) for i in [1,2]] 
     lgb = length.(gbasis)
     bs = [lb; lgb]
-    if d > 2
-        tbasis = [tuple(a, b) for a in get_wbasis(N, 1, label=1), b in get_sbasis(N, 1)]
-        ltb = length(tbasis)
-        bs = [bs; ltb]
-    end
     if QUIET == false
         println("The block sizes are $bs.")
     end
@@ -26,49 +21,27 @@ function certify_Ising_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
         end
     end
     for l = 1:length(gbasis), i = 1:lgb[l], j = i:lgb[l]
-        # for k = 1:length(H.supp)
-        #     if !isreal(reduce2!(reduce3!(reduce1!([H.supp[k]; gbasis[l][j]])))[2])
-        #         @inbounds bi,c = reduce!([gbasis[l][i]; H.supp[k]; gbasis[l][j]], N)
-        #         if c != 0 && !isempty(bi)
-        #             push!(tsupp, [bi])
-        #         end
-        #     end
-        # end
-        # @inbounds bi,c = reduce!([gbasis[l][i]; gbasis[l][j]], N)
-        # if c != 0 && !isempty(bi)
-        #     push!(tsupp, [bi])
-        # end
-        if !isz(gbasis[l][i], model="Ising") && !isz(gbasis[l][j], model="Ising")
-            push!(tsupp, sort([reduce_mirror(gbasis[l][i], N), reduce_mirror(gbasis[l][j], N)]))
-        end
-    end
-    if d > 2
-        for i = 1:ltb, j = i:ltb
-            for k = 1:length(H.supp)
-                if !isreal(reduce2!(reduce3!(reduce1!([H.supp[k]; tbasis[j][1]])))[2])
-                    @inbounds bi,c = reduce!([tbasis[i][1]; H.supp[k]; tbasis[j][1]], N)
-                    if c != 0
-                        if isempty(bi)
-                            push!(tsupp, sort([tbasis[i][2]; tbasis[j][2]]))
-                        else
-                            push!(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [bi]]))
-                        end
-                    end
-                end
-            end
-            @inbounds bi,c = reduce!([tbasis[i][1]; tbasis[j][1]], N)
-            if c != 0
-                if isempty(bi)
-                    push!(tsupp, sort([tbasis[i][2]; tbasis[j][2]]))
-                else
-                    push!(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [bi]]))
-                end
-            end
-            if !isz(tbasis[i][1], model="Ising") && !isz(tbasis[j][1], model="Ising")
-                push!(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [reduce_mirror(tbasis[i][1], N)]; [reduce_mirror(tbasis[j][1], N)]]))
+        bis = PSDstate_entry(gbasis[l][i][1], gbasis[l][j][1], H, N)[1]
+        for bi in bis
+            if isempty(bi)
+                push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]]))
+            else
+                push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; [bi]]))
             end
         end
+        if !isz(gbasis[l][i][1], model="Ising") && !isz(gbasis[l][j][1], model="Ising")
+            temp = [reduce_mirror(gbasis[l][i][1], N), reduce_mirror(gbasis[l][j][1], N)]
+            push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; temp]))
+        end
     end
+    # for i = 0:3, j = 0:3, k = 0:3, l = 0:3, s = 0:3, t = 0:3, u = 0:3
+    #     ind = [i,j,k,l,s,t,u]
+    #     inx = ind .!= 0
+    #     bi = 3*(Vector(1:7)[inx] .- 1) + ind[inx]
+    #     if !isz(bi)
+    #         push!(tsupp, [reduce_mirror(bi, N)])
+    #     end
+    # end
     sort!(tsupp)
     unique!(tsupp)
     if QUIET == false
@@ -101,30 +74,35 @@ function certify_Ising_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     for l = 1:length(gbasis)
         gpos[l] = @variable(model, [1:lgb[l], 1:lgb[l]], PSD)
         for i = 1:lgb[l], j = i:lgb[l]
-            for k = 1:length(H.supp)
-                if !isreal(reduce2!(reduce3!(reduce1!([H.supp[k]; gbasis[l][j]])))[2])
-                    @inbounds bi,c = reduce!([gbasis[l][i]; H.supp[k]; gbasis[l][j]], N, realify=true)
-                    if c != 0
-                        Locb = isempty(bi) ? 1 : bfind(tsupp, [bi])
-                        if i == j
-                            @inbounds add_to_expression!(cons[Locb], 2c*H.coe[k], gpos[l][i, j])
-                        else
-                            @inbounds add_to_expression!(cons[Locb], 4c*H.coe[k], gpos[l][i, j])
-                        end
-                    end
+            bis,coes = PSDstate_entry(gbasis[l][i][1], gbasis[l][j][1], H, N, realify=true)
+            for (k, bi) in enumerate(bis)
+                if isempty(bi)
+                    Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]]))
+                else
+                    Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; [bi]]))
+                end
+                if i == j
+                    @inbounds add_to_expression!(cons[Locb], coes[k], gpos[l][i, j])
+                else
+                    @inbounds add_to_expression!(cons[Locb], 2*coes[k], gpos[l][i, j])
                 end
             end
-            @inbounds bi,c = reduce!([gbasis[l][i]; gbasis[l][j]], N, realify=true)
+            @inbounds bi,c = reduce!([gbasis[l][i][1]; gbasis[l][j][1]], N, realify=true)
             if c != 0
-                Locb = isempty(bi) ? 1 : bfind(tsupp, [bi])
+                if isempty(bi)
+                    Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]]))
+                else
+                    Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; [bi]]))
+                end
                 if i == j
                     @inbounds add_to_expression!(cons[Locb], -c*gamma, gpos[l][i, j])
                 else
                     @inbounds add_to_expression!(cons[Locb], -2c*gamma, gpos[l][i, j])
                 end
             end
-            if !isz(gbasis[l][i], model="Ising") && !isz(gbasis[l][j], model="Ising")
-                Locb = bfind(tsupp, sort([reduce_mirror(gbasis[l][i], N), reduce_mirror(gbasis[l][j], N)]))
+            if !isz(gbasis[l][i][1], model="Ising") && !isz(gbasis[l][j][1], model="Ising")
+                temp = [reduce_mirror(gbasis[l][i][1], N), reduce_mirror(gbasis[l][j][1], N)]
+                Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; temp]))
                 if i == j
                     @inbounds add_to_expression!(cons[Locb], gamma, gpos[l][i, j])
                 else
@@ -133,51 +111,27 @@ function certify_Ising_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
             end
         end
     end
-    if d > 2
-        tpos = @variable(model, [1:ltb, 1:ltb], PSD)
-        for i = 1:ltb, j = i:ltb
-            for k = 1:length(H.supp)
-                if !isreal(reduce2!(reduce3!(reduce1!([H.supp[k]; tbasis[j][1]])))[2])
-                    @inbounds bi,c = reduce!([tbasis[i][1]; H.supp[k]; tbasis[j][1]], N, realify=true)
-                    if c != 0
-                        if isempty(bi)
-                            Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]]))
-                        else
-                            Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [bi]]))
-                        end
-                        if i == j
-                            @inbounds add_to_expression!(cons[Locb], 2c*H.coe[k], tpos[i, j])
-                        else
-                            @inbounds add_to_expression!(cons[Locb], 4c*H.coe[k], tpos[i, j])
-                        end
-                    end
-                end
-            end
-            @inbounds bi,c = reduce!([tbasis[i][1]; tbasis[j][1]], N, realify=true)
-            if c != 0
-                if isempty(bi)
-                    Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]]))
-                else
-                    Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [bi]]))
-                end
-                if i == j
-                    @inbounds add_to_expression!(cons[Locb], -c*gamma, tpos[i, j])
-                else
-                    @inbounds add_to_expression!(cons[Locb], -2c*gamma, tpos[i, j])
-                end
-            end
-            if !isz(tbasis[i][1], model="Ising") && !isz(tbasis[j][1], model="Ising")
-                Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [reduce_mirror(tbasis[i][1], N)]; [reduce_mirror(tbasis[j][1], N)]]))
-                if i == j
-                    @inbounds add_to_expression!(cons[Locb], gamma, tpos[i, j])
-                else
-                    @inbounds add_to_expression!(cons[Locb], 2*gamma, tpos[i, j])
-                end
+    mons = generate_mons(N, lso)
+    mons = filter_mons(mons, tsupp, H, N)
+    for mon in mons
+        fr = @variable(model)
+        for (i, item) in enumerate(H.supp)
+            bi,c = reduce!([item; mon], N)
+            if imag(c) != 0
+                Locb = bfind(tsupp, [bi])
+                add_to_expression!(cons[Locb], H.coe[i]*imag(c), fr)
             end
         end
     end
+    # posepsd7!(model, cons, tsupp, N)
     @variable(model, λ)
     cons[1] += λ
+    # for i = 1:ceil(Int, N/2)
+    #     μ = @variable(model, lower_bound = 0)
+    #     add_to_expression!(cons[1], μ)
+    #     Locb = bfind(tsupp, [[3i-2], [3i-2]])
+    #     add_to_expression!(cons[Locb], -μ)
+    # end
     @objective(model, Max, λ)
     @constraint(model, cons .== 0)
     # @constraint(model, con, cons==zeros(length(cons)))
@@ -200,11 +154,7 @@ function certify_Ising_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     #         @inbounds bi,c = reduce!([basis[i][j][1]; basis[i][k][1]], N)
     #         if c != 0
     #             if isempty(bi)
-    #                 if isempty(basis[i][j][2]) && isempty(basis[i][k][2])
-    #                     Locb = 1
-    #                 else
-    #                     Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]]))
-    #                 end
+    #                 Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]]))
     #             else
     #                 Locb = bfind(tsupp, sort([basis[i][j][2]; basis[i][k][2]; [bi]]))
     #             end
@@ -216,19 +166,14 @@ function certify_Ising_gap(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
     return flag
 end
 
-function certify_Ising_gap_nosignsymmetry(N::Int, H::ncpoly, gamma, d::Int; QUIET=false)
+function certify_Ising_gap_nosignsymmetry(N::Int, H::ncpoly, gamma, d::Int; lso=6, QUIET=false)
     println("********************************** SpectralGap **********************************")
     println("SpectralGap is launching...")
     basis = [get_basis(N, d, label=1)]
     lb = length.(basis)
-    gbasis = [[get_wbasis(N, d-1, label=1); get_wbasis(N, d-1, label=2)]]
+    gbasis = [[get_bulkbasis(N, d-1, label=1); get_bulkbasis(N, d-1, label=2)]]
     lgb = length.(gbasis)
     bs = [lb; lgb]
-    if d > 2
-        tbasis = [tuple(a, b) for a in [get_wbasis(N, 1, label=1); get_wbasis(N, 1, label=2)], b in get_sbasis(N, 1)]
-        ltb = length(tbasis)
-        bs = [bs; ltb]
-    end
     if QUIET == false
         println("The block sizes are $bs.")
     end
@@ -240,40 +185,29 @@ function certify_Ising_gap_nosignsymmetry(N::Int, H::ncpoly, gamma, d::Int; QUIE
         else
             push!(tsupp, sort([basis[i][j][2]; basis[i][k][2]; [bi]]))
         end
+        temp = [reduce_mirror(basis[i][j][1], N), reduce_mirror(basis[i][k][1], N)]
+        push!(tsupp, sort([basis[i][j][2]; basis[i][k][2]; temp]))
     end
     for l = 1:length(gbasis), i = 1:lgb[l], j = i:lgb[l]
-        for k = 1:length(H.supp)
-            if !isreal(reduce2!(reduce3!(reduce1!([H.supp[k]; gbasis[l][j]])))[2])
-                @inbounds bi = reduce!([gbasis[l][i]; H.supp[k]; gbasis[l][j]], N, identify_zeros=false)[1]
-                push!(tsupp, [bi])
-            end
-        end
-        # @inbounds bi = reduce!([gbasis[l][i]; gbasis[l][j]], N, identify_zeros=false)[1]
-        # if !isempty(bi)
-        #     push!(tsupp, [bi])
-        # end
-        push!(tsupp, sort([reduce_mirror(gbasis[l][i], N), reduce_mirror(gbasis[l][j], N)]))
-    end
-    if d > 2
-        for i = 1:ltb, j = i:ltb
-            for k = 1:length(H.supp)
-                if !isreal(reduce2!(reduce3!(reduce1!([H.supp[k]; tbasis[j][1]])))[2])
-                    @inbounds bi = reduce!([tbasis[i][1]; H.supp[k]; tbasis[j][1]], N, identify_zeros=false)[1]
-                    if isempty(bi)
-                        push!(tsupp, sort([tbasis[i][2]; tbasis[j][2]]))
-                    else
-                        push!(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [bi]]))
-                    end
-                end
-            end
-            @inbounds bi = reduce!([tbasis[i][1]; tbasis[j][1]], N, identify_zeros=false)[1]
+        bis = PSDstate_entry(gbasis[l][i][1], gbasis[l][j][1], H, N, identify_zeros=false)[1]
+        for bi in bis
             if isempty(bi)
-                push!(tsupp, sort([tbasis[i][2]; tbasis[j][2]]))
+                push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]]))
             else
-                push!(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [bi]]))
+                push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; [bi]]))
             end
-            push!(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [reduce_mirror(tbasis[i][1], N)]; [reduce_mirror(tbasis[j][1], N)]]))
         end
+        temp = [reduce_mirror(gbasis[l][i][1], N), reduce_mirror(gbasis[l][j][1], N)]
+        push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; temp]))
+    end
+    # for i = 0:3, j = 0:3, k = 0:3, l = 0:3, s = 0:3, t = 0:3, u = 0:3
+    #     ind = [i,j,k,l,s,t,u]
+    #     inx = ind .!= 0
+    #     bi = 3*(Vector(1:7)[inx] .- 1) + ind[inx]
+    #     push!(tsupp, [reduce_mirror(bi, N)])
+    # end
+    for i = 1:N, j = 1:3
+        push!(tsupp, [[3(i-1)+j], [3(i-1)+j]])
     end
     sort!(tsupp)
     unique!(tsupp)
@@ -303,25 +237,57 @@ function certify_Ising_gap_nosignsymmetry(N::Int, H::ncpoly, gamma, d::Int; QUIE
             end
         end
     end
+    npos = Vector{Symmetric{VariableRef}}(undef, length(basis))
+    for l = 1:length(basis)
+        npos[l] = @variable(model, [1:2*lb[l], 1:2*lb[l]], PSD)
+        for i = 1:lb[l], j = i:lb[l]
+            @inbounds bi,c = reduce!([basis[l][i][1]; basis[l][j][1]], N, identify_zeros=false)
+            if isempty(bi)
+                Locb = bfind(tsupp, sort([basis[l][i][2]; basis[l][j][2]]))
+            else
+                Locb = bfind(tsupp, sort([basis[l][i][2]; basis[l][j][2]; [bi]]))
+            end
+            if i == j
+                @inbounds add_to_expression!(cons[Locb], c, npos[l][i, j]+npos[l][i+lb[l], j+lb[l]])
+            elseif isreal(c)
+                @inbounds add_to_expression!(cons[Locb], 2c, npos[l][i, j]+npos[l][i+lb[l], j+lb[l]])
+            else
+                @inbounds add_to_expression!(cons[Locb], -2*imag(c), npos[l][i,j+lb[l]]-npos[l][j,i+lb[l]])
+            end
+            temp = [reduce_mirror(basis[l][i][1], N), reduce_mirror(basis[l][j][1], N)]
+            Locb = bfind(tsupp, sort([basis[l][i][2]; basis[l][j][2]; temp]))
+            if i == j
+                @inbounds add_to_expression!(cons[Locb], -1, npos[l][i, j]+npos[l][i+lb[l], j+lb[l]])
+            else
+                @inbounds add_to_expression!(cons[Locb], -2, npos[l][i, j]+npos[l][i+lb[l], j+lb[l]])
+            end
+        end
+    end
     gpos = Vector{Symmetric{VariableRef}}(undef, length(gbasis))
     for l = 1:length(gbasis)
         gpos[l] = @variable(model, [1:2*lgb[l], 1:2*lgb[l]], PSD)
         for i = 1:lgb[l], j = i:lgb[l]
-            for k = 1:length(H.supp)
-                if !isreal(reduce2!(reduce3!(reduce1!([H.supp[k]; gbasis[l][j]])))[2])
-                    @inbounds bi,c = reduce!([gbasis[l][i]; H.supp[k]; gbasis[l][j]], N, identify_zeros=false)
-                    Locb = isempty(bi) ? 1 : bfind(tsupp, [bi])
-                    if i == j
-                        @inbounds add_to_expression!(cons[Locb], 2c*H.coe[k], gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
-                    elseif isreal(c)
-                        @inbounds add_to_expression!(cons[Locb], 4c*H.coe[k], gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
-                    else
-                        @inbounds add_to_expression!(cons[Locb], -4*imag(c)*H.coe[k], gpos[l][i, j+lgb[l]]-gpos[l][j, i+lgb[l]])
-                    end
+            bis,coes = PSDstate_entry(gbasis[l][i][1], gbasis[l][j][1], H, N, identify_zeros=false)
+            for (k, bi) in enumerate(bis)
+                if isempty(bi)
+                    Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]]))
+                else
+                    Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; [bi]]))
+                end
+                if i == j
+                    @inbounds add_to_expression!(cons[Locb], coes[k], gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
+                elseif isreal(coes[k])
+                    @inbounds add_to_expression!(cons[Locb], 2*coes[k], gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
+                else
+                    @inbounds add_to_expression!(cons[Locb], -2*imag(coes[k]), gpos[l][i, j+lgb[l]]-gpos[l][j, i+lgb[l]])
                 end
             end
-            @inbounds bi,c = reduce!([gbasis[l][i]; gbasis[l][j]], N, identify_zeros=false)
-            Locb = isempty(bi) ? 1 : bfind(tsupp, [bi])
+            @inbounds bi,c = reduce!([gbasis[l][i][1]; gbasis[l][j][1]], N, identify_zeros=false)
+            if isempty(bi)
+                Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]]))
+            else
+                Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; [bi]]))
+            end
             if i == j
                 @inbounds add_to_expression!(cons[Locb], -c*gamma, gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
             elseif isreal(c)
@@ -329,7 +295,8 @@ function certify_Ising_gap_nosignsymmetry(N::Int, H::ncpoly, gamma, d::Int; QUIE
             else
                 @inbounds add_to_expression!(cons[Locb], 2*imag(c)*gamma, gpos[l][i, j+lgb[l]]-gpos[l][j, i+lgb[l]])
             end
-            Locb = bfind(tsupp, sort([reduce_mirror(gbasis[l][i], N), reduce_mirror(gbasis[l][j], N)]))
+            temp = [reduce_mirror(gbasis[l][i][1], N), reduce_mirror(gbasis[l][j][1], N)]
+            Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; temp]))
             if i == j
                 @inbounds add_to_expression!(cons[Locb], gamma, gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
             else
@@ -337,49 +304,29 @@ function certify_Ising_gap_nosignsymmetry(N::Int, H::ncpoly, gamma, d::Int; QUIE
             end
         end
     end
-    if d > 2
-        tpos = @variable(model, [1:2*ltb, 1:2*ltb], PSD)
-        for i = 1:ltb, j = i:ltb
-            for k = 1:length(H.supp)
-                if !isreal(reduce2!(reduce3!(reduce1!([H.supp[k]; tbasis[j][1]])))[2])
-                    @inbounds bi,c = reduce!([tbasis[i][1]; H.supp[k]; tbasis[j][1]], N, identify_zeros=false)
-                    if isempty(bi)
-                        Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]]))
-                    else
-                        Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [bi]]))
-                    end
-                    if i == j
-                        @inbounds add_to_expression!(cons[Locb], 2c*H.coe[k], tpos[i, j]+tpos[i+ltb, j+ltb])
-                    elseif isreal(c)
-                        @inbounds add_to_expression!(cons[Locb], 4c*H.coe[k], tpos[i, j]+tpos[i+ltb, j+ltb])
-                    else
-                        @inbounds add_to_expression!(cons[Locb], -4*imag(c)*H.coe[k], tpos[i, j+ltb]-tpos[j, i+ltb])
-                    end
-                end
-            end
-            @inbounds bi,c = reduce!([tbasis[i][1]; tbasis[j][1]], N, identify_zeros=false)
-            if isempty(bi)
-                Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]]))
-            else
-                Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [bi]]))
-            end
-            if i == j
-                @inbounds add_to_expression!(cons[Locb], -c*gamma, tpos[i, j]+tpos[i+ltb, j+ltb])
-            elseif isreal(c)
-                @inbounds add_to_expression!(cons[Locb], -2c*gamma, tpos[i, j]+tpos[i+ltb, j+ltb])
-            else
-                @inbounds add_to_expression!(cons[Locb], 2*imag(c)*gamma, tpos[i, j+ltb]-tpos[j, i+ltb])
-            end
-            Locb = bfind(tsupp, sort([tbasis[i][2]; tbasis[j][2]; [reduce_mirror(tbasis[i][1], N)]; [reduce_mirror(tbasis[j][1], N)]]))
-            if i == j
-                @inbounds add_to_expression!(cons[Locb], gamma, tpos[i, j]+tpos[i+ltb, j+ltb])
-            else
-                @inbounds add_to_expression!(cons[Locb], 2*gamma, tpos[i, j]+tpos[i+ltb, j+ltb])
+    mons = generate_mons(N, lso)
+    mons = filter_mons(mons, tsupp, H, N, identify_zeros=false)
+    for mon in mons
+        fr = @variable(model)
+        for (i, item) in enumerate(H.supp)
+            bi,c = reduce!([item; mon], N, identify_zeros=false)
+            if imag(c) != 0
+                Locb = bfind(tsupp, [bi])
+                add_to_expression!(cons[Locb], H.coe[i]*imag(c), fr)
             end
         end
     end
+    # posepsd7!(model, cons, tsupp, N, identify_zeros=false)
     @variable(model, λ)
     cons[1] += λ
+    for i = 1:N
+        μ = @variable(model, lower_bound = 0)
+        add_to_expression!(cons[1], μ)
+        for j = 1:3
+            Locb = bfind(tsupp, [[3(i-1)+j], [3(i-1)+j]])
+            add_to_expression!(cons[Locb], -μ)
+        end
+    end
     @objective(model, Max, λ)
     @constraint(model, cons .== 0)
     if QUIET == false
@@ -397,12 +344,12 @@ function certify_Ising_gap_nosignsymmetry(N::Int, H::ncpoly, gamma, d::Int; QUIE
     return flag
 end
 
-function certify_Heisenberg_kagome_gap(N::Int, H::ncpoly, triples, edges, inner_triples, inner_edges, gamma, d::Int; QUIET=false)
+function certify_Heisenberg_kagome_gap(N::Int, H::ncpoly, triples, edges, inner_triples, inner_edges, gamma, d::Int; lso=4, QUIET=false)
     println("********************************** SpectralGap **********************************")
     println("SpectralGap is launching...")
-    basis = [get_kagome_basis(N, triples, edges, d, label=i) for i = 1:4]
+    basis = [get_kagome_basis(N, triples, edges, d, label=i) for i = 1:2]
     lb = length.(basis)
-    gbasis = [get_kagome_wbasis(N, inner_triples, inner_edges, d-1, label=i) for i = 1:4]
+    gbasis = [get_kagome_bulkbasis(N, inner_triples, inner_edges, d-1, label=i) for i = 1:2]
     lgb = length.(gbasis)
     bs = [lb; lgb]
     if QUIET == false
@@ -420,8 +367,24 @@ function certify_Heisenberg_kagome_gap(N::Int, H::ncpoly, triples, edges, inner_
         end
     end
     for l = 1:length(gbasis), i = 1:lgb[l], j = i:lgb[l]
-        if !isz(gbasis[l][i], model="kagome") && !isz(gbasis[l][j], model="kagome")
-            push!(tsupp, sort([reduce_perm(gbasis[l][i]), reduce_perm(gbasis[l][j])]))
+        bis = PSDstate_entry(gbasis[l][i][1], gbasis[l][j][1], H, N, model="kagome")[1]
+        for bi in bis
+            if isempty(bi)
+                push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]]))
+            else
+                push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; [bi]]))
+            end
+        end
+        if !isz(gbasis[l][i][1], model="kagome") && !isz(gbasis[l][j][1], model="kagome")
+            temp = [reduce_perm(gbasis[l][i][1]), reduce_perm(gbasis[l][j][1])]
+            push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; temp]))
+        end
+    end
+    for i = 0:3, j = 0:3, k = 0:3, l = 0:3, s = 0:3, t = 0:3, u = 0:3, v = 0:3, w = 0:3
+        ind = [i,j,k,l,s,t,u,v,w]
+        if all(x->iseven(sum(ind .== x)), 1:3)
+            inx = ind .!= 0
+            push!(tsupp, [reduce_perm(3*(Vector(1:9)[inx] .- 1) + ind[inx])])
         end
     end
     sort!(tsupp)
@@ -456,30 +419,35 @@ function certify_Heisenberg_kagome_gap(N::Int, H::ncpoly, triples, edges, inner_
     for l = 1:length(gbasis)
         gpos[l] = @variable(model, [1:lgb[l], 1:lgb[l]], PSD)
         for i = 1:lgb[l], j = i:lgb[l]
-            for k = 1:length(H.supp)
-                if !isreal(reduce2!(reduce3!(reduce1!([H.supp[k]; gbasis[l][j]])))[2])
-                    @inbounds bi,c = reduce!([gbasis[l][i]; H.supp[k]; gbasis[l][j]], N, realify=true, model="kagome")
-                    if c != 0
-                        Locb = isempty(bi) ? 1 : bfind(tsupp, [bi])
-                        if i == j
-                            @inbounds add_to_expression!(cons[Locb], c*H.coe[k]/2, gpos[l][i, j])
-                        else
-                            @inbounds add_to_expression!(cons[Locb], c*H.coe[k], gpos[l][i, j])
-                        end
-                    end
+            bis,coes = PSDstate_entry(gbasis[l][i][1], gbasis[l][j][1], H, N, realify=true, model="kagome")
+            for (k, bi) in enumerate(bis)
+                if isempty(bi)
+                    Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]]))
+                else
+                    Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; [bi]]))
+                end
+                if i == j
+                    @inbounds add_to_expression!(cons[Locb], coes[k], gpos[l][i, j])
+                else
+                    @inbounds add_to_expression!(cons[Locb], 2*coes[k], gpos[l][i, j])
                 end
             end
-            @inbounds bi,c = reduce!([gbasis[l][i]; gbasis[l][j]], N, realify=true, model="kagome")
+            @inbounds bi,c = reduce!([gbasis[l][i][1]; gbasis[l][j][1]], N, realify=true, model="kagome")
             if c != 0
-                Locb = isempty(bi) ? 1 : bfind(tsupp, [bi])
+                if isempty(bi)
+                    Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]]))
+                else
+                    Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; [bi]]))
+                end
                 if i == j
                     @inbounds add_to_expression!(cons[Locb], -c*gamma, gpos[l][i, j])
                 else
                     @inbounds add_to_expression!(cons[Locb], -2c*gamma, gpos[l][i, j])
                 end
             end
-            if !isz(gbasis[l][i], model="kagome") && !isz(gbasis[l][j], model="kagome")
-                Locb = bfind(tsupp, sort([reduce_perm(gbasis[l][i]), reduce_perm(gbasis[l][j])]))
+            if !isz(gbasis[l][i][1], model="kagome") && !isz(gbasis[l][j][1], model="kagome")
+                temp = [reduce_perm(gbasis[l][i][1]), reduce_perm(gbasis[l][j][1])]
+                Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; temp]))
                 if i == j
                     @inbounds add_to_expression!(cons[Locb], gamma, gpos[l][i, j])
                 else
@@ -488,6 +456,30 @@ function certify_Heisenberg_kagome_gap(N::Int, H::ncpoly, triples, edges, inner_
             end
         end
     end
+    if N > 5
+        if N == 13
+            iN = 5
+        elseif N == 27
+            iN = 13
+        elseif N == 45
+            iN = 27
+        else
+            @error "Wrong number of sites!"
+        end
+        mons = generate_mons_kagome(iN, lso)
+        mons = filter_mons(mons, tsupp, H, N, model="kagome")
+        for mon in mons
+            fr = @variable(model)
+            for (i, item) in enumerate(H.supp)
+                bi,c = reduce!([item; mon], N, model="kagome")
+                if imag(c) != 0
+                    Locb = bfind(tsupp, [bi])
+                    add_to_expression!(cons[Locb], H.coe[i]*imag(c), fr)
+                end
+            end
+        end
+    end
+    posepsd9!(model, cons, tsupp)
     @variable(model, λ)
     cons[1] += λ
     @objective(model, Max, λ)
@@ -507,12 +499,14 @@ function certify_Heisenberg_kagome_gap(N::Int, H::ncpoly, triples, edges, inner_
     return flag
 end
 
-function certify_Heisenberg_kagome_gap_nosignsymmetry(N::Int, H::ncpoly, triples, edges, gamma, d::Int; obj=nothing, QUIET=false)
+function certify_Heisenberg_kagome_gap_nosignsymmetry(N::Int, H::ncpoly, triples, edges, inner_triples, inner_edges, gamma, d::Int; obj=nothing, lso=4, QUIET=false)
     println("********************************** SpectralGap **********************************")
     println("SpectralGap is launching...")
-    basis = [get_kagome_basis(N, triples, edges, d, label=i) for i = 1:4]
+    # basis = [get_kagome_basis(N, triples, edges, d, label=i) for i = 1:4]
+    basis = [vcat([get_kagome_basis(N, triples, edges, d, label=i) for i = 1:4]...)]
     lb = length.(basis)
-    gbasis = [get_kagome_wbasis(N, [], [], d-1, label=i) for i = 2:4]
+    # gbasis = [get_kagome_bulkbasis(N, inner_triples, inner_edges, d-1, label=i) for i = 2:4]
+    gbasis = [vcat([get_kagome_bulkbasis(N, inner_triples, inner_edges, d-1, label=i) for i = 1:4]...)]
     lgb = length.(gbasis)
     bs = [lb; lgb]
     if QUIET == false
@@ -526,10 +520,29 @@ function certify_Heisenberg_kagome_gap_nosignsymmetry(N::Int, H::ncpoly, triples
         else
             push!(tsupp, sort([basis[i][j][2]; basis[i][k][2]; [bi]]))
         end
+        temp = [basis[i][j][1], basis[i][k][1]]
+        push!(tsupp, sort([basis[i][j][2]; basis[i][k][2]; temp]))
     end
-    # for l = 1:length(gbasis), i = 1:lgb[l], j = i:lgb[l]
-    #     push!(tsupp, sort([gbasis[l][i], gbasis[l][j]]))
-    # end
+    for l = 1:length(gbasis), i = 1:lgb[l], j = i:lgb[l]
+        bis = PSDstate_entry(gbasis[l][i][1], gbasis[l][j][1], H, N, identify_zeros=false, symmetry=false)[1]
+        for bi in bis
+            if isempty(bi)
+                push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]]))
+            else
+                push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; [bi]]))
+            end
+        end
+        temp = [gbasis[l][i][1], gbasis[l][j][1]]
+        push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; temp]))
+    end
+    for i = 0:3, j = 0:3, k = 0:3, l = 0:3, s = 0:3, t = 0:3, u = 0:3
+        ind = [i,j,k,l,s,t,u]
+        inx = ind .!= 0
+        push!(tsupp, [reduce_perm(3*(Vector(1:7)[inx] .- 1) + ind[inx])])
+    end
+    for i = 1:N, j = 1:3
+        push!(tsupp, [[3(i-1)+j], [3(i-1)+j]])
+    end
     sort!(tsupp)
     unique!(tsupp)
     if QUIET == false
@@ -558,46 +571,111 @@ function certify_Heisenberg_kagome_gap_nosignsymmetry(N::Int, H::ncpoly, triples
             end
         end
     end
+    npos = Vector{Symmetric{VariableRef}}(undef, length(basis))
+    for l = 1:length(basis)
+        npos[l] = @variable(model, [1:2*lb[l], 1:2*lb[l]], PSD)
+        for i = 1:lb[l], j = i:lb[l]
+            @inbounds bi,c = reduce!([basis[l][i][1]; basis[l][j][1]], N, identify_zeros=true, symmetry=true)
+            if isempty(bi)
+                Locb = bfind(tsupp, sort([basis[l][i][2]; basis[l][j][2]]))
+            else
+                Locb = bfind(tsupp, sort([basis[l][i][2]; basis[l][j][2]; [bi]]))
+            end
+            if i == j
+                @inbounds add_to_expression!(cons[Locb], c, npos[l][i, j]+npos[l][i+lb[l], j+lb[l]])
+            elseif isreal(c)
+                @inbounds add_to_expression!(cons[Locb], 2c, npos[l][i, j]+npos[l][i+lb[l], j+lb[l]])
+            else
+                @inbounds add_to_expression!(cons[Locb], -2*imag(c), npos[l][i,j+lb[l]]-npos[l][j,i+lb[l]])
+            end
+            temp = [basis[l][i][1], basis[l][j][1]]
+            Locb = bfind(tsupp, sort([basis[l][i][2]; basis[l][j][2]; temp]))
+            if i == j
+                @inbounds add_to_expression!(cons[Locb], -1, npos[l][i, j]+npos[l][i+lb[l], j+lb[l]])
+            else
+                @inbounds add_to_expression!(cons[Locb], -2, npos[l][i, j]+npos[l][i+lb[l], j+lb[l]])
+            end
+        end
+    end
     gpos = Vector{Symmetric{VariableRef}}(undef, length(gbasis))
     for l = 1:length(gbasis)
         gpos[l] = @variable(model, [1:2*lgb[l], 1:2*lgb[l]], PSD)
         for i = 1:lgb[l], j = i:lgb[l]
-            for k = 1:length(H.supp)
-                if !isreal(reduce2!(reduce3!(reduce1!([H.supp[k]; gbasis[l][j]])))[2])
-                    @inbounds bi,c = reduce!([gbasis[l][i]; H.supp[k]; gbasis[l][j]], N, identify_zeros=false, symmetry=false)
-                    Locb = isempty(bi) ? 1 : bfind(tsupp, [bi])
-                    if i == j
-                        @inbounds add_to_expression!(cons[Locb], c*H.coe[k]/2, gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
-                    elseif isreal(c)
-                        @inbounds add_to_expression!(cons[Locb], c*H.coe[k], gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
-                    else
-                        @inbounds add_to_expression!(cons[Locb], -imag(c)*H.coe[k], gpos[l][i, j+lgb[l]]-gpos[l][j, i+lgb[l]])
-                    end
+            bis,coes = PSDstate_entry(gbasis[l][i][1], gbasis[l][j][1], H, N, identify_zeros=false, symmetry=false)
+            for (k, bi) in enumerate(bis)
+                if isempty(bi)
+                    Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]]))
+                else
+                    Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; [bi]]))
+                end
+                if i == j
+                    @inbounds add_to_expression!(cons[Locb], coes[k], gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
+                elseif isreal(coes[k])
+                    @inbounds add_to_expression!(cons[Locb], 2*coes[k], gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
+                else
+                    @inbounds add_to_expression!(cons[Locb], -2*imag(coes[k]), gpos[l][i, j+lgb[l]]-gpos[l][j, i+lgb[l]])
                 end
             end
-            @inbounds bi,c = reduce!([gbasis[l][i]; gbasis[l][j]], N, identify_zeros=false, symmetry=false)
-            Locb = isempty(bi) ? 1 : bfind(tsupp, [bi])
+            @inbounds bi,c = reduce!([gbasis[l][i][1]; gbasis[l][j][1]], N, identify_zeros=false, symmetry=false)
+            if isempty(bi)
+                Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]]))
+            else
+                Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; [bi]]))
+            end
             if i == j
                 @inbounds add_to_expression!(cons[Locb], -c*gamma, gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
             elseif isreal(c)
                 @inbounds add_to_expression!(cons[Locb], -2c*gamma, gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
             else
-                @inbounds add_to_expression!(cons[Locb], 2imag(c)*gamma, gpos[l][i, j+lgb[l]]-gpos[l][j, i+lgb[l]])
+                @inbounds add_to_expression!(cons[Locb], 2*imag(c)*gamma, gpos[l][i, j+lgb[l]]-gpos[l][j, i+lgb[l]])
             end
-            # Locb = bfind(tsupp, sort([gbasis[l][i], gbasis[l][j]]))
-            # if i == j
-            #     @inbounds add_to_expression!(cons[Locb], gamma, gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
-            # else
-            #     @inbounds add_to_expression!(cons[Locb], 2*gamma, gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
-            # end
+            temp = [gbasis[l][i][1], gbasis[l][j][1]]
+            Locb = bfind(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; temp]))
+            if i == j
+                @inbounds add_to_expression!(cons[Locb], gamma, gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
+            else
+                @inbounds add_to_expression!(cons[Locb], 2*gamma, gpos[l][i, j]+gpos[l][i+lgb[l], j+lgb[l]])
+            end
         end
     end
+    if N > 5
+        if N == 13
+            iN = 5
+        elseif N == 27
+            iN = 13
+        elseif N == 45
+            iN = 27
+        else
+            @error "Wrong number of sites!"
+        end
+        mons = generate_mons_kagome(iN, lso)
+        mons = filter_mons(mons, tsupp, H, N, model="kagome", identify_zeros=false, symmetry=false)
+        for mon in mons
+            fr = @variable(model)
+            for (i, item) in enumerate(H.supp)
+                bi,c = reduce!([item; mon], N, model="kagome", identify_zeros=false, symmetry=false)
+                if imag(c) != 0
+                    Locb = bfind(tsupp, [bi])
+                    add_to_expression!(cons[Locb], H.coe[i]*imag(c), fr)
+                end
+            end
+        end
+    end
+    posepsd7!(model, cons, tsupp, N, lattice="kagome", identify_zeros=true, symmetry=true)
     @variable(model, λ)
     cons[1] -= λ
     if obj !== nothing
         for i = 1:length(obj.supp)
             Locb = bfind(tsupp, [obj.supp[i]])
             cons[Locb] += obj.coe[i]
+        end
+    end
+    for i = 1:N
+        μ = @variable(model, lower_bound = 0)
+        add_to_expression!(cons[1], μ)
+        for j = 1:3
+            Locb = bfind(tsupp, [[3(i-1)+j], [3(i-1)+j]])
+            add_to_expression!(cons[Locb], -μ)
         end
     end
     @objective(model, Min, λ)

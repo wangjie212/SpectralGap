@@ -9,5 +9,6 @@ export ncpoly, certify_Ising_gap, certify_Ising_gap_nosignsymmetry, certify_Heis
 
 include("basicfunction.jl")
 include("sdp.jl")
+include("strengthening.jl")
 
 end
