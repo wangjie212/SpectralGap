@@ -1,12 +1,12 @@
 using SpectralGap
 
 # 1D Ising model with transversal field
-N = 9
+N = 5
 g = 0.5
 H = ncpoly([[3*[i;i+1] for i =1:N-1]; [[3i-2] for i = 1:N]], [-ones(N-1); g*ones(N)])
 d = 2
-ub = 0.24
-lb = 0.24
+ub = 0.5
+lb = 0.4
 while ub - lb > 1e-2
     gamma = (ub + lb)/2
     flag = certify_Ising_gap(N, H, gamma, d, QUIET=false)
@@ -25,12 +25,12 @@ else
 end
 
 
-N = 5
-g = 0.5
+N = 7
+g = 2
 H = ncpoly([[3*[i;i+1] for i =1:N-1]; [[3i-2] for i = 1:N]], [-ones(N-1); g*ones(N)])
 d = 3
-ub = 3.36
-lb = 3.36
+ub = 3
+lb = 2
 while ub - lb > 1e-2
     gamma = (ub + lb)/2
     flag = certify_Ising_gap_nosignsymmetry(N, H, gamma, d, QUIET=false)
@@ -82,10 +82,11 @@ triples = [[1,2,3], [1,4,5], [2,6,7], [3,8,9], [4,10,11], [5,12,13], [6,14,27], 
 [14, 28, 29], [15, 30, 31], [16, 17, 32], [18, 33, 34], [19, 35, 36], [21, 37, 38], [22, 39, 40], [23, 24, 41], [25, 42, 43], [26, 44, 45]]
 edges = [[29, 30], [34, 35], [38, 39], [43, 44]]
 
+
 H = ncpoly(vcat([[[3*a[1]-2;3*a[2]-2], [3*a[1]-1;3*a[2]-1], [3*a[1];3*a[2]], [3*a[1]-2;3*a[3]-2], [3*a[1]-1;3*a[3]-1], [3*a[1];3*a[3]], [3*a[2]-2;3*a[3]-2], [3*a[2]-1;3*a[3]-1], [3*a[2];3*a[3]]] for a in triples]...), 0.25*ones(9*length(triples)))
 d = 3
-ub = 1.28
-lb = 1.28
+ub = 1.27
+lb = 1.27
 while ub - lb > 1e-2
     gamma = (ub + lb)/2
     flag = certify_Heisenberg_kagome_gap(N, H, triples, edges, triples0, edges0, gamma, d, lso=5, QUIET=false)
@@ -107,8 +108,8 @@ end
 H = ncpoly(vcat([[[3*a[1]-2;3*a[2]-2], [3*a[1]-1;3*a[2]-1], [3*a[1];3*a[2]], [3*a[1]-2;3*a[3]-2], [3*a[1]-1;3*a[3]-1], [3*a[1];3*a[3]], [3*a[2]-2;3*a[3]-2], [3*a[2]-1;3*a[3]-1], [3*a[2];3*a[3]]] for a in triples]...), 0.25*ones(9*length(triples)))
 # obj = ncpoly([[1;5;9], [2;6;7], [3;4;8], [1;6;8], [3;5;7], [2;4;9]], 1/8*[1; 1; 1; -1; -1; -1])
 d = 2
-ub = 2
-lb = 2
+ub = 2.17
+lb = 2.17
 while ub - lb > 1e-2
     gamma = (ub + lb)/2
     flag,v = certify_Heisenberg_kagome_gap_nosignsymmetry(N, H, triples, edges, triples0, edges0, gamma, d, lso=5, QUIET=false)

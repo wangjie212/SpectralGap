@@ -19,6 +19,10 @@ function certify_Ising_gap(N::Int, H::ncpoly, gamma, d::Int; lso=6, QUIET=false)
                 push!(tsupp, sort([basis[i][j][2]; basis[i][k][2]; [bi]]))
             end
         end
+        # if !isz(basis[i][j][1], model="Ising") && !isz(basis[i][k][1], model="Ising")
+        #     temp = [reduce_mirror(basis[i][j][1], N), reduce_mirror(basis[i][k][1], N)]
+        #     push!(tsupp, sort([basis[i][j][2]; basis[i][k][2]; temp]))
+        # end
     end
     for l = 1:length(gbasis), i = 1:lgb[l], j = i:lgb[l]
         bis = PSDstate_entry(gbasis[l][i][1], gbasis[l][j][1], H, N)[1]
@@ -34,14 +38,16 @@ function certify_Ising_gap(N::Int, H::ncpoly, gamma, d::Int; lso=6, QUIET=false)
             push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; temp]))
         end
     end
-    # for i = 0:3, j = 0:3, k = 0:3, l = 0:3, s = 0:3, t = 0:3, u = 0:3
-    #     ind = [i,j,k,l,s,t,u]
-    #     inx = ind .!= 0
-    #     bi = 3*(Vector(1:7)[inx] .- 1) + ind[inx]
-    #     if !isz(bi)
-    #         push!(tsupp, [reduce_mirror(bi, N)])
-    #     end
-    # end
+    if N >= 7
+        for i = 0:3, j = 0:3, k = 0:3, l = 0:3, s = 0:3, t = 0:3, u = 0:3
+            ind = [i,j,k,l,s,t,u]
+            inx = ind .!= 0
+            bi = 3*(Vector(1:7)[inx] .- 1) + ind[inx]
+            if !isz(bi)
+                push!(tsupp, [reduce_mirror(bi, N)])
+            end
+        end
+    end
     sort!(tsupp)
     unique!(tsupp)
     if QUIET == false
@@ -70,6 +76,34 @@ function certify_Ising_gap(N::Int, H::ncpoly, gamma, d::Int; lso=6, QUIET=false)
             end
         end
     end
+    # npos = Vector{Symmetric{VariableRef}}(undef, length(basis))
+    # for l = 1:length(basis)
+    #     npos[l] = @variable(model, [1:lb[l], 1:lb[l]], PSD)
+    #     for i = 1:lb[l], j = i:lb[l]
+    #         @inbounds bi,c = reduce!([basis[l][i][1]; basis[l][j][1]], N, realify=true)
+    #         if c != 0
+    #             if isempty(bi)
+    #                 Locb = bfind(tsupp, sort([basis[l][i][2]; basis[l][j][2]]))
+    #             else
+    #                 Locb = bfind(tsupp, sort([basis[l][i][2]; basis[l][j][2]; [bi]]))
+    #             end
+    #             if i == j
+    #                 @inbounds add_to_expression!(cons[Locb], c, npos[l][i, j])
+    #             else
+    #                 @inbounds add_to_expression!(cons[Locb], 2c, npos[l][i, j])
+    #             end
+    #         end
+    #         if !isz(basis[l][i][1], model="Ising") && !isz(basis[l][j][1], model="Ising")
+    #             temp = [reduce_mirror(basis[l][i][1], N), reduce_mirror(basis[l][j][1], N)]
+    #             Locb = bfind(tsupp, sort([basis[l][i][2]; basis[l][j][2]; temp]))
+    #             if i == j
+    #                 @inbounds add_to_expression!(cons[Locb], -1, npos[l][i, j])
+    #             else
+    #                 @inbounds add_to_expression!(cons[Locb], -2, npos[l][i, j])
+    #             end
+    #         end
+    #     end
+    # end
     gpos = Vector{Symmetric{VariableRef}}(undef, length(gbasis))
     for l = 1:length(gbasis)
         gpos[l] = @variable(model, [1:lgb[l], 1:lgb[l]], PSD)
@@ -123,15 +157,17 @@ function certify_Ising_gap(N::Int, H::ncpoly, gamma, d::Int; lso=6, QUIET=false)
             end
         end
     end
-    # posepsd7!(model, cons, tsupp, N)
+    if N >= 7
+        posepsd7!(model, cons, tsupp, N)
+    end
     @variable(model, λ)
     cons[1] += λ
-    # for i = 1:ceil(Int, N/2)
-    #     μ = @variable(model, lower_bound = 0)
-    #     add_to_expression!(cons[1], μ)
-    #     Locb = bfind(tsupp, [[3i-2], [3i-2]])
-    #     add_to_expression!(cons[Locb], -μ)
-    # end
+    for i = 1:ceil(Int, N/2)
+        μ = @variable(model, lower_bound = 0)
+        add_to_expression!(cons[1], μ)
+        Locb = bfind(tsupp, [[3i-2], [3i-2]])
+        add_to_expression!(cons[Locb], -μ)
+    end
     @objective(model, Max, λ)
     @constraint(model, cons .== 0)
     # @constraint(model, con, cons==zeros(length(cons)))
@@ -169,7 +205,7 @@ end
 function certify_Ising_gap_nosignsymmetry(N::Int, H::ncpoly, gamma, d::Int; lso=6, QUIET=false)
     println("********************************** SpectralGap **********************************")
     println("SpectralGap is launching...")
-    basis = [get_basis(N, d, label=1)]
+    basis = [[get_basis(N, d, label=1); get_basis(N, d, label=2)]]
     lb = length.(basis)
     gbasis = [[get_bulkbasis(N, d-1, label=1); get_bulkbasis(N, d-1, label=2)]]
     lgb = length.(gbasis)
@@ -200,12 +236,14 @@ function certify_Ising_gap_nosignsymmetry(N::Int, H::ncpoly, gamma, d::Int; lso=
         temp = [reduce_mirror(gbasis[l][i][1], N), reduce_mirror(gbasis[l][j][1], N)]
         push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; temp]))
     end
-    # for i = 0:3, j = 0:3, k = 0:3, l = 0:3, s = 0:3, t = 0:3, u = 0:3
-    #     ind = [i,j,k,l,s,t,u]
-    #     inx = ind .!= 0
-    #     bi = 3*(Vector(1:7)[inx] .- 1) + ind[inx]
-    #     push!(tsupp, [reduce_mirror(bi, N)])
-    # end
+    if N >= 7
+        for i = 0:3, j = 0:3, k = 0:3, l = 0:3, s = 0:3, t = 0:3, u = 0:3
+            ind = [i,j,k,l,s,t,u]
+            inx = ind .!= 0
+            bi = 3*(Vector(1:7)[inx] .- 1) + ind[inx]
+            push!(tsupp, [reduce_mirror(bi, N)])
+        end
+    end
     for i = 1:N, j = 1:3
         push!(tsupp, [[3(i-1)+j], [3(i-1)+j]])
     end
@@ -316,7 +354,9 @@ function certify_Ising_gap_nosignsymmetry(N::Int, H::ncpoly, gamma, d::Int; lso=
             end
         end
     end
-    # posepsd7!(model, cons, tsupp, N, identify_zeros=false)
+    if N >= 7
+        posepsd7!(model, cons, tsupp, N, identify_zeros=false)
+    end
     @variable(model, λ)
     cons[1] += λ
     for i = 1:N
@@ -349,7 +389,11 @@ function certify_Heisenberg_kagome_gap(N::Int, H::ncpoly, triples, edges, inner_
     println("SpectralGap is launching...")
     basis = [get_kagome_basis(N, triples, edges, d, label=i) for i = 1:2]
     lb = length.(basis)
-    gbasis = [get_kagome_bulkbasis(N, inner_triples, inner_edges, d-1, label=i) for i = 1:2]
+    if N == 5 || d == 2
+        gbasis = [get_kagome_bulkbasis(N, inner_triples, inner_edges, d-1, label=i) for i = 2:2]
+    else
+        gbasis = [get_kagome_bulkbasis(N, inner_triples, inner_edges, d-1, label=i) for i = 1:2]
+    end
     lgb = length.(gbasis)
     bs = [lb; lgb]
     if QUIET == false
@@ -380,11 +424,13 @@ function certify_Heisenberg_kagome_gap(N::Int, H::ncpoly, triples, edges, inner_
             push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; temp]))
         end
     end
-    for i = 0:3, j = 0:3, k = 0:3, l = 0:3, s = 0:3, t = 0:3, u = 0:3, v = 0:3, w = 0:3
-        ind = [i,j,k,l,s,t,u,v,w]
-        if all(x->iseven(sum(ind .== x)), 1:3)
-            inx = ind .!= 0
-            push!(tsupp, [reduce_perm(3*(Vector(1:9)[inx] .- 1) + ind[inx])])
+    if N >= 9
+        for i = 0:3, j = 0:3, k = 0:3, l = 0:3, s = 0:3, t = 0:3, u = 0:3, v = 0:3, w = 0:3
+            ind = [i,j,k,l,s,t,u,v,w]
+            if all(x->iseven(sum(ind .== x)), 1:3)
+                inx = ind .!= 0
+                push!(tsupp, [reduce_perm(3*(Vector(1:9)[inx] .- 1) + ind[inx])])
+            end
         end
     end
     sort!(tsupp)
@@ -479,7 +525,9 @@ function certify_Heisenberg_kagome_gap(N::Int, H::ncpoly, triples, edges, inner_
             end
         end
     end
-    posepsd9!(model, cons, tsupp)
+    if N >= 9
+        posepsd9!(model, cons, tsupp)
+    end
     @variable(model, λ)
     cons[1] += λ
     @objective(model, Max, λ)
@@ -502,10 +550,8 @@ end
 function certify_Heisenberg_kagome_gap_nosignsymmetry(N::Int, H::ncpoly, triples, edges, inner_triples, inner_edges, gamma, d::Int; obj=nothing, lso=4, QUIET=false)
     println("********************************** SpectralGap **********************************")
     println("SpectralGap is launching...")
-    # basis = [get_kagome_basis(N, triples, edges, d, label=i) for i = 1:4]
     basis = [vcat([get_kagome_basis(N, triples, edges, d, label=i) for i = 1:4]...)]
     lb = length.(basis)
-    # gbasis = [get_kagome_bulkbasis(N, inner_triples, inner_edges, d-1, label=i) for i = 2:4]
     gbasis = [vcat([get_kagome_bulkbasis(N, inner_triples, inner_edges, d-1, label=i) for i = 1:4]...)]
     lgb = length.(gbasis)
     bs = [lb; lgb]
@@ -535,10 +581,12 @@ function certify_Heisenberg_kagome_gap_nosignsymmetry(N::Int, H::ncpoly, triples
         temp = [gbasis[l][i][1], gbasis[l][j][1]]
         push!(tsupp, sort([gbasis[l][i][2]; gbasis[l][j][2]; temp]))
     end
-    for i = 0:3, j = 0:3, k = 0:3, l = 0:3, s = 0:3, t = 0:3, u = 0:3
-        ind = [i,j,k,l,s,t,u]
-        inx = ind .!= 0
-        push!(tsupp, [reduce_perm(3*(Vector(1:7)[inx] .- 1) + ind[inx])])
+    if N >= 7
+        for i = 0:3, j = 0:3, k = 0:3, l = 0:3, s = 0:3, t = 0:3, u = 0:3
+            ind = [i,j,k,l,s,t,u]
+            inx = ind .!= 0
+            push!(tsupp, [3*(Vector(1:7)[inx] .- 1) + ind[inx]])
+        end
     end
     for i = 1:N, j = 1:3
         push!(tsupp, [[3(i-1)+j], [3(i-1)+j]])
@@ -575,7 +623,7 @@ function certify_Heisenberg_kagome_gap_nosignsymmetry(N::Int, H::ncpoly, triples
     for l = 1:length(basis)
         npos[l] = @variable(model, [1:2*lb[l], 1:2*lb[l]], PSD)
         for i = 1:lb[l], j = i:lb[l]
-            @inbounds bi,c = reduce!([basis[l][i][1]; basis[l][j][1]], N, identify_zeros=true, symmetry=true)
+            @inbounds bi,c = reduce!([basis[l][i][1]; basis[l][j][1]], N, identify_zeros=false, symmetry=false)
             if isempty(bi)
                 Locb = bfind(tsupp, sort([basis[l][i][2]; basis[l][j][2]]))
             else
@@ -661,7 +709,9 @@ function certify_Heisenberg_kagome_gap_nosignsymmetry(N::Int, H::ncpoly, triples
             end
         end
     end
-    posepsd7!(model, cons, tsupp, N, lattice="kagome", identify_zeros=true, symmetry=true)
+    if N >= 7
+        posepsd7!(model, cons, tsupp, N, identify_zeros=false, symmetry=false)
+    end
     @variable(model, λ)
     cons[1] -= λ
     if obj !== nothing
